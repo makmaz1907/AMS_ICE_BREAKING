@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `bir-kelime-bir-islem` is a Turkish real-time ice-breaker game ("Bir Kelime Bir İşlem"): a Vite/React/TypeScript client plus a stateless HTTP API meant for Vercel. The host/projector screen is `/host` (any non-`/join` path); participants join on phones at `/join`. All UI text is Turkish.
 
-**Migration status (branch `vercel-migration`).** Express and Socket.IO were replaced by an HTTP API that runs on Vercel (`fra1`) with Upstash Redis for state and Ably for change notifications (steps 3a–3c, done). Locally the same API runs in-memory without any keys. Step 4 (not started) adds host approval of joining teams.
+**Migration status (branch `vercel-migration`).** Express and Socket.IO were replaced by an HTTP API that runs on Vercel (`fra1`) with Upstash Redis for state and Ably for change notifications (steps 3a–3c), plus host approval of joining teams (step 4). Locally the same API runs in-memory without any keys.
 
 `AGENTS.md` and `DEV_NOTES.md` (in Turkish) predate the migration; see "Stale documentation" below.
 
@@ -37,7 +37,7 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 
 **Layers** (`server/`):
 - `engine.ts` holds all game rules and phase transitions. It talks to storage only through the `Store` interface and announces changes through a `Notifier`.
-- `store.ts` defines `Store`, the `Meta` record and `createMemoryStore()`. Every `Store` method must be atomic on its own.
+- `store.ts` defines `Store`, the `Meta` and team records and `createMemoryStore()`. Every `Store` method must be atomic on its own. The in-memory `version` starts at `Date.now()` so it keeps increasing across dev-server restarts: open pages ignore any version lower than one they have already seen.
 - `redisStore.ts` implements the same contract on Upstash Redis, using Lua scripts for the compare-and-set of `Meta`, for `addSubmission` (which mirrors `isRoundOpen()`; keep the two in sync) and for the login counter. The client runs with `automaticDeserialization: false`, so values are raw strings and `HGETALL` returns a flat `[field, value, …]` list. Game data expires 2 days after its last write.
 - `ably.ts` publishes versions over Ably REST and issues subscribe-only token requests for the browsers.
 - `api.ts` (`handleApi`) is the single router for all `/api/*` routes, shared by Vercel and local dev.
@@ -53,7 +53,15 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 
 **No server timers.** A round closes lazily: `tick()` closes it if `endsAt` has passed and it isn't paused. `GET /api/state` and `POST /api/tick` both call `tick()`, and the clients (`useGame` in `src/game.ts`) call `/api/tick` when their countdown reaches zero, retrying every 2s. The CAS in `mutate()` guarantees that exactly one caller performs each transition. Pause stores `pausedRemainingMs`, resume recomputes `endsAt`, and the state's `serverNow` lets clients correct for clock skew.
 
-**Identity:** `POST /api/join` returns `{ gameId, teamId, token }`. The token is `HMAC(gameId|teamId)` and the phone stores it in `localStorage` as `bkb-team-token`, along with `bkb-team-id` and `bkb-team-name`. Public state exposes only `teamId`, never the token. A join with a token from the current game keeps the team (and its score). A token from an older `gameId` creates a new team, and `JoinPage` rejoins automatically when it sees a new `gameId`. Host login (`POST /api/host-login`, limited to 10 tries per IP per 10 min) returns a 12h host token, which the host page keeps in `sessionStorage` (`bkb-host-token`). `POST /api/host-command` requires it as a `Bearer` token and returns 401 otherwise.
+**Identity:** `POST /api/join` returns `{ gameId, teamId, token, name, teamStatus }` (`teamStatus`, not `status`: `post()` in `src/game.ts` puts the HTTP status code in `status`). The token is `HMAC(gameId|teamId)` and the phone stores it in `localStorage` as `bkb-team-token`, along with `bkb-team-id` and `bkb-team-name`. Public state exposes only `teamId`, never the token. A join with a token from the current game keeps the team, its name and its score. A token from an older `gameId` creates a new team, and `JoinPage` rejoins automatically when it sees a new `gameId`. Host login (`POST /api/host-login`, limited to 10 tries per IP per 10 min) returns a 12h host token, which the host page keeps in `sessionStorage` (`bkb-host-token`). `POST /api/host-command` requires it as a `Bearer` token and returns 401 otherwise.
+
+**Host approval (step 4):** every team record has a `status`: `pending`, `approved`, `rejected` or `removed`. Records from before step 4 have no status and count as approved (`statusOf()`); likewise a `Meta` without `approvalRequired` counts as approval on (`approvalOn()`).
+- With approval on (the default, switchable in the lobby and kept across "Oyunu sıfırla"), new teams start `pending`. Turning it off approves everyone pending.
+- Only approved teams can submit. Only they appear in `teams`, the results, `winner` and the exports.
+- The public state carries `statuses` (teamId → status, for teams that aren't approved) so a phone learns its own status, but never the names of those teams. Their names are only in `GET /api/host-state` (Bearer host token, never CDN-cached), which the host page reads instead of `/api/state`.
+- Host commands: `approve` (pending or rejected), `reject` (pending), `remove` (approved or pending), `approve-all`, `approval` `{ enabled }`.
+- A rejoin with a valid token never renames the team and writes nothing, so it can't race an approval. A rejected or removed team may join again only under a different name (compared case-insensitively in Turkish), which creates a new pending team.
+- The host screen is usually the projector, so pending names stay hidden until the host clicks "Göster". Removing a team from the scoreboard takes two clicks.
 
 **Submissions (`POST /api/submit`):** word validation awaits a TDK lookup. Afterwards `store.addSubmission()` atomically re-checks that the round is still open (same round id, active, not paused, before `endsAt`), rejects an identical repeat, records the answer and adds its score. Keep that re-check inside the store operation; a check in the engine alone is racy. A team may submit several distinct answers per round, and each accepted one scores.
 
@@ -63,7 +71,7 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 
 **Duplicated client-side logic:** `src/pages/JoinPage.tsx` reimplements `matchingLetterIndex`/`canBuild` so users can't type words they can't build. If you change letter-matching or joker rules in `wordGame.ts`, change the copy in JoinPage too. `src/types.ts` mirrors the `state()` payload by hand; keep them in sync.
 
-**Client:** `src/main.tsx` routes on `location.pathname` (no router library). `src/game.ts` exports `useGame()` (state, refetch on version, deadline tick, clock offset), `useRemainingSeconds()`, `post()` and `emptyState`. `src/realtime.ts` is the only place that knows the notification transport. Each page is a single component that switches its UI on `state.phase`. Styling uses Tailwind utilities plus shared classes (`.app-shell`, `.panel`) in `src/styles.css`. Use the NTT DATA brand variables in `src/theme.css` for brand colors.
+**Client:** `src/main.tsx` routes on `location.pathname` (no router library). `src/game.ts` exports `useGame()` (state, refetch on version, deadline tick, clock offset; given a host token it reads `/api/host-state` and calls `onUnauthorized` on a 401), `useRemainingSeconds()`, `post()` and `emptyState`. `src/realtime.ts` is the only place that knows the notification transport. Each page is a single component that switches its UI on `state.phase`. Styling uses Tailwind utilities plus shared classes (`.app-shell`, `.panel`) in `src/styles.css`. Use the NTT DATA brand variables in `src/theme.css` for brand colors.
 
 ## Domain rules to preserve
 

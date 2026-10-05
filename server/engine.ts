@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import rawConfig from "../config/game.json" with { type: "json" };
 import { hostPin, hostToken, pinMatches, readTeamToken, teamToken } from "./auth.js";
 import { createNumberRound, evaluateNumberExpression, scoreNumber } from "./numberGame.js";
-import { initialMeta, isActive, isExpired, isRoundOpen, type Meta, type Store, type Submission } from "./store.js";
+import { approvalOn, initialMeta, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
 import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wordGame.js";
 
@@ -10,7 +10,8 @@ type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
 export type Notifier = { publish(version: number): Promise<void> };
 export type Result = { ok: boolean; message?: string };
-export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset";
+export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "approval";
+type Body = Record<string, unknown>;
 export type Engine = ReturnType<typeof createEngine>;
 type PublicState = Record<string, unknown> & { version: number };
 
@@ -19,6 +20,10 @@ const parsed = rawConfig as Partial<GameConfig>;
 const config: GameConfig = { ...defaults, ...parsed, rounds: parsed.rounds?.length ? parsed.rounds : defaults.rounds };
 const closedMessage = "Bu tur için cevap kabul edilmiyor.";
 const fail = (message: string) => ({ ok: false, message });
+const sameName = (left: string, right: string) => left.toLocaleUpperCase("tr-TR") === right.toLocaleUpperCase("tr-TR");
+// Which host action moves a team from which statuses to which.
+const teamTransitions: Record<string, { from: TeamStatus[]; to: TeamStatus }> = { approve: { from: ["pending", "rejected"], to: "approved" }, reject: { from: ["pending"], to: "rejected" }, remove: { from: ["approved", "pending"], to: "removed" } };
+const refusal: Record<TeamStatus, string> = { pending: "Takımınız henüz host tarafından onaylanmadı.", approved: "", rejected: "Katılımınız reddedildi. Farklı bir adla tekrar deneyebilirsiniz.", removed: "Oyundan çıkarıldınız. Farklı bir adla tekrar katılabilirsiniz." };
 
 export function createEngine(store: Store, notifier: Notifier) {
   async function changed() { await notifier.publish(await store.bumpVersion()); }
@@ -36,7 +41,7 @@ export function createEngine(store: Store, notifier: Notifier) {
   // There is no server timer on Vercel: whoever notices an expired round first closes it. Safe to call any number of times.
   function tick() { return mutate((meta) => isExpired(meta, Date.now()) ? finished(meta) : null); }
 
-  const commands: Record<HostAction, (meta: Meta, seconds: number) => Meta | null> = {
+  const commands: Record<HostAction, (meta: Meta, body: Body) => Meta | null> = {
     start: (meta) => {
       const next = meta.matchRound >= config.rounds.length ? { ...meta, series: meta.series + 1, matchRound: 1 } : { ...meta, matchRound: meta.matchRound + 1 };
       const current = config.rounds[next.matchRound - 1];
@@ -49,21 +54,25 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (meta.pausedRemainingMs === null) return { ...meta, pausedRemainingMs: Math.max(0, meta.round.endsAt - Date.now()) };
       return { ...meta, round: { ...meta.round, endsAt: Date.now() + meta.pausedRemainingMs }, pausedRemainingMs: null };
     },
-    "add-time": (meta, seconds) => {
+    "add-time": (meta, body) => {
+      const seconds = Number(body.seconds);
       if (!isActive(meta) || !meta.round || !(seconds > 0 && seconds <= 600)) return null;
       return meta.pausedRemainingMs !== null ? { ...meta, pausedRemainingMs: meta.pausedRemainingMs + seconds * 1000 } : { ...meta, round: { ...meta.round, endsAt: meta.round.endsAt + seconds * 1000 } };
     },
-    reset: () => initialMeta(),
+    // The host's approval setting survives a reset; everything else starts over.
+    reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta) }),
+    approval: (meta, body) => typeof body.enabled === "boolean" && body.enabled !== approvalOn(meta) ? { ...meta, approvalRequired: body.enabled } : null,
   };
 
-  async function rankedTeams(meta: Meta) {
-    const [teams, scores] = await Promise.all([store.listTeams(meta.gameId), store.scores(meta.gameId, meta.series)]);
-    return teams.map((team) => ({ ...team, score: scores[team.id] ?? 0 })).sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "tr-TR"));
+  // Only approved teams play: they alone appear in the scoreboard, the results and the exports.
+  async function rankedTeams(meta: Meta, teams?: TeamRecord[]) {
+    const [all, scores] = await Promise.all([teams ?? store.listTeams(meta.gameId), store.scores(meta.gameId, meta.series)]);
+    return all.filter((team) => statusOf(team) === "approved").map((team) => ({ id: team.id, name: team.name, score: scores[team.id] ?? 0 })).sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "tr-TR"));
   }
   async function roundSubmissions(meta: Meta, teams: Array<{ id: string; name: string }>) {
     if (!meta.round) return [];
     const names = new Map(teams.map((team) => [team.id, team.name]));
-    return (await store.listSubmissions(meta.round.id)).map((submission) => ({ ...submission, teamName: names.get(submission.teamId) ?? "Bilinmeyen takım" })).sort((left, right) => right.score - left.score || left.teamName.localeCompare(right.teamName, "tr-TR"));
+    return (await store.listSubmissions(meta.round.id)).filter((submission) => names.has(submission.teamId)).map((submission) => ({ ...submission, teamName: names.get(submission.teamId) ?? "Bilinmeyen takım" })).sort((left, right) => right.score - left.score || left.teamName.localeCompare(right.teamName, "tr-TR"));
   }
   function serializeRound(meta: Meta) {
     const round = meta.round;
@@ -78,7 +87,8 @@ export function createEngine(store: Store, notifier: Notifier) {
     const version = await store.readVersion();
     const meta = await store.readMeta();
     if (isExpired(meta, Date.now())) { await tick(); return state(); }
-    const teams = await rankedTeams(meta);
+    const all = await store.listTeams(meta.gameId);
+    const teams = await rankedTeams(meta, all);
     const roundType = config.rounds[meta.matchRound - 1]?.type ?? null;
     const showResults = meta.phase === "round-results" || meta.phase === "game-results";
     return {
@@ -88,7 +98,14 @@ export function createEngine(store: Store, notifier: Notifier) {
       numberSolution: meta.phase === "round-results" && meta.round && "solution" in meta.round ? meta.round.solution : null,
       themedWord: meta.phase === "round-results" && roundType === "word" ? config.themedWord || null : null,
       paused: meta.pausedRemainingMs !== null, remainingMs: meta.pausedRemainingMs,
+      // Phones learn their own approval status from here; names of teams that aren't approved are only in hostState().
+      approvalRequired: approvalOn(meta), statuses: Object.fromEntries(all.filter((team) => statusOf(team) !== "approved").map((team) => [team.id, statusOf(team)])),
     };
+  }
+  async function approveAll(meta: Meta) {
+    const pending = (await store.listTeams(meta.gameId)).filter((team) => statusOf(team) === "pending");
+    await Promise.all(pending.map((team) => store.saveTeam(meta.gameId, { ...team, status: "approved" })));
+    if (pending.length) await changed();
   }
 
   async function isTdkWord(word: string): Promise<TdkLookup | null> {
@@ -115,9 +132,27 @@ export function createEngine(store: Store, notifier: Notifier) {
   return {
     state,
     tick,
-    async command(action: unknown, seconds: unknown): Promise<Result> {
+    // Not CDN-cached (GET /api/host-state): adds the names of teams waiting for approval, oldest first.
+    async hostState() {
+      const [current, meta] = await Promise.all([state(), store.readMeta()]);
+      const pendingTeams = (await store.listTeams(meta.gameId)).filter((team) => statusOf(team) === "pending").sort((left, right) => (left.joinedAt ?? 0) - (right.joinedAt ?? 0)).map((team) => ({ id: team.id, name: team.name }));
+      return { ...current, pendingTeams };
+    },
+    async command(action: unknown, body: Body): Promise<Result> {
+      if (action === "approve-all") { await approveAll(await store.readMeta()); return { ok: true }; }
+      if (typeof action === "string" && action in teamTransitions) {
+        const { from, to } = teamTransitions[action];
+        const meta = await store.readMeta();
+        const team = typeof body.teamId === "string" ? await store.getTeam(meta.gameId, body.teamId) : null;
+        if (!team || !from.includes(statusOf(team))) return fail("Bu takım için bu işlem yapılamaz.");
+        await store.saveTeam(meta.gameId, { ...team, status: to });
+        await changed();
+        return { ok: true };
+      }
       if (typeof action !== "string" || !(action in commands)) return fail("Bilinmeyen komut.");
-      await mutate((meta) => commands[action as HostAction](meta, Number(seconds)));
+      const next = await mutate((meta) => commands[action as HostAction](meta, body));
+      // Turning approval off lets everyone who is still waiting in.
+      if (action === "approval" && next && !approvalOn(next)) await approveAll(next);
       return { ok: true };
     },
     async join(rawName: unknown, token: unknown) {
@@ -126,20 +161,30 @@ export function createEngine(store: Store, notifier: Notifier) {
       const meta = await store.readMeta();
       const claim = readTeamToken(token);
       // A token from before "Oyunu sıfırla" belongs to a game that no longer exists, so the team joins as a new team.
-      const teamId = claim?.gameId === meta.gameId ? claim.teamId : crypto.randomUUID();
-      await store.saveTeam(meta.gameId, { id: teamId, name });
+      const existing = claim?.gameId === meta.gameId ? await store.getTeam(meta.gameId, claim.teamId) : null;
+      if (existing) {
+        const status = statusOf(existing);
+        // Rejoining never renames: the host approved this name. Nothing is written, so a rejoin can't race an approval.
+        if (status === "pending" || status === "approved") return { ok: true, gameId: meta.gameId, teamId: existing.id, token: teamToken(meta.gameId, existing.id), name: existing.name, teamStatus: status };
+        // A rejected or removed team may apply again, but only under a different name.
+        if (sameName(existing.name, name)) return fail(refusal[status]);
+      }
+      const team: TeamRecord = { id: crypto.randomUUID(), name, status: approvalOn(meta) ? "pending" : "approved", joinedAt: Date.now() };
+      await store.saveTeam(meta.gameId, team);
       await changed();
-      return { ok: true, gameId: meta.gameId, teamId, token: teamToken(meta.gameId, teamId) };
+      return { ok: true, gameId: meta.gameId, teamId: team.id, token: teamToken(meta.gameId, team.id), name, teamStatus: team.status };
     },
     async submit(token: unknown, answer: unknown, rawJokerIndex: unknown): Promise<Result> {
       const claim = readTeamToken(token);
       const meta = await store.readMeta();
-      if (!claim || claim.gameId !== meta.gameId || !(await store.getTeam(meta.gameId, claim.teamId))) return fail("Önce lobiye katılın.");
+      const team = claim && claim.gameId === meta.gameId ? await store.getTeam(meta.gameId, claim.teamId) : null;
+      if (!team) return fail("Önce lobiye katılın.");
+      if (statusOf(team) !== "approved") return fail(refusal[statusOf(team)]);
       if (typeof answer !== "string" || !answer.trim() || answer.length > 64) return fail("Geçerli bir cevap girin.");
       const round = meta.round;
       if (!round || !isRoundOpen(meta, round.id, Date.now())) return fail(closedMessage);
       const jokerIndex = typeof rawJokerIndex === "number" ? rawJokerIndex : null;
-      const item = "letters" in round ? await validateWord(claim.teamId, answer, jokerIndex, round) : validateNumber(claim.teamId, answer, round);
+      const item = "letters" in round ? await validateWord(team.id, answer, jokerIndex, round) : validateNumber(team.id, answer, round);
       if (!item) return fail("TDK sözlüğüne ulaşılamadı. Lütfen tekrar deneyin.");
       if (!item.buildValid) return fail("letters" in round ? "Kelime verilen harfler ve jokerle oluşturulmalı." : "İfade kurallara uymuyor.");
       if ("letters" in round && !item.dictionaryValid) return fail("Kelime TDK sözlüğünde bulunamadı.");

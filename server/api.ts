@@ -7,6 +7,7 @@ type Route = (context: { request: Request; body: Body } & Runtime) => Promise<Re
 
 const json = (data: unknown, status = 200, cacheControl = "no-store") => Response.json(data, { status, headers: { "Cache-Control": cacheControl } });
 const bearer = (request: Request) => request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+const unauthorized = () => json({ ok: false, message: "Host oturumu geçersiz. PIN'i yeniden girin." }, 401);
 const clientAddress = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
 
 const routes: Record<string, Route> = {
@@ -20,7 +21,8 @@ const routes: Record<string, Route> = {
   "POST join": async ({ engine, body }) => json(await engine.join(body.name, body.token)),
   "POST submit": async ({ engine, body }) => json(await engine.submit(body.token, body.answer, body.jokerIndex)),
   "POST host-login": async ({ engine, body, request }) => json(await engine.hostLogin(body.pin, clientAddress(request))),
-  "POST host-command": async ({ engine, body, request }) => isHostToken(bearer(request)) ? json(await engine.command(body.action, body.seconds)) : json({ ok: false, message: "Host oturumu geçersiz. PIN'i yeniden girin." }, 401),
+  "POST host-command": async ({ engine, body, request }) => isHostToken(bearer(request)) ? json(await engine.command(body.action, body)) : unauthorized(),
+  "GET host-state": async ({ engine, request }) => isHostToken(bearer(request)) ? json(await engine.hostState()) : unauthorized(),
   "GET results.json": async ({ engine }) => json(await engine.results()),
   "GET results.csv": async ({ engine }) => {
     const { teams } = await engine.results();

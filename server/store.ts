@@ -4,8 +4,11 @@ import type { WordRound } from "./wordGame.js";
 
 export type GamePhase = "lobby" | "word" | "number" | "round-results" | "game-results";
 // gameId changes on "Oyunu sıfırla" (invalidating team tokens); series changes on "Yeni oyun" (fresh scores, same teams).
-export type Meta = { gameId: string; series: number; rev: number; phase: GamePhase; matchRound: number; round: WordRound | NumberRound | null; pausedRemainingMs: number | null };
-export type TeamRecord = { id: string; name: string };
+// approvalRequired is missing on games created before host approval existed; approvalOn() treats that as on.
+export type Meta = { gameId: string; series: number; rev: number; phase: GamePhase; matchRound: number; round: WordRound | NumberRound | null; pausedRemainingMs: number | null; approvalRequired?: boolean };
+export type TeamStatus = "pending" | "approved" | "rejected" | "removed";
+// status and joinedAt are missing on teams created before host approval existed; statusOf() treats those teams as approved.
+export type TeamRecord = { id: string; name: string; status?: TeamStatus; joinedAt?: number };
 export type Submission = { teamId: string; answer: string; value?: number; dictionaryValid?: boolean; meanings?: string[]; buildValid: boolean; jokerUsed?: boolean; status: "accepted" | "rejected"; score: number };
 export type SubmitResult = "ok" | "duplicate" | "closed";
 
@@ -30,7 +33,9 @@ export interface Store {
   hit(key: string, windowSeconds: number): Promise<number>;
 }
 
-export function initialMeta(): Meta { return { gameId: crypto.randomUUID(), series: 0, rev: 0, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null }; }
+export function initialMeta(): Meta { return { gameId: crypto.randomUUID(), series: 0, rev: 0, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null, approvalRequired: true }; }
+export function approvalOn(meta: Meta) { return meta.approvalRequired !== false; }
+export function statusOf(team: TeamRecord): TeamStatus { return team.status ?? "approved"; }
 export function isActive(meta: Meta) { return meta.phase === "word" || meta.phase === "number"; }
 export function isExpired(meta: Meta, now: number) { return isActive(meta) && meta.pausedRemainingMs === null && meta.round !== null && now >= meta.round.endsAt; }
 export function isRoundOpen(meta: Meta, roundId: string, now: number) { return isActive(meta) && meta.round?.id === roundId && meta.pausedRemainingMs === null && now < meta.round.endsAt; }
@@ -38,7 +43,8 @@ export function submissionKey(submission: Submission) { return `${submission.tea
 
 export function createMemoryStore(): Store {
   let meta = initialMeta();
-  let version = 0;
+  // Starting from the clock keeps versions increasing across dev-server restarts; open pages ignore any version lower than one they've seen.
+  let version = Date.now();
   const teams = new Map<string, Map<string, TeamRecord>>();
   const scores = new Map<string, Map<string, number>>();
   const submissions = new Map<string, Map<string, Submission>>();
