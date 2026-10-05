@@ -2,7 +2,7 @@ import http from "node:http";
 import os from "node:os";
 import { handleApi } from "./api.js";
 import { hostPin } from "./auth.js";
-import { changes, engine } from "./runtime.js";
+import { changes, runtime } from "./runtime.js";
 
 // Local stand-in for Vercel: serves the same /api routes, plus two dev-only ones: /api/events (SSE in place of Ably) and /api/join-url (LAN address for the QR code).
 const port = Number(process.env.PORT ?? 3000);
@@ -36,7 +36,7 @@ http.createServer(async (request, response) => {
     const headers = new Headers(Object.entries(request.headers).flatMap(([name, value]) => value === undefined ? [] : [[name, Array.isArray(value) ? value.join(", ") : value]]));
     if (!headers.has("x-forwarded-for")) headers.set("x-forwarded-for", request.socket.remoteAddress ?? "local");
     const body = request.method === "POST" ? await readBody(request) : undefined;
-    const result = await handleApi(new Request(url, { method: request.method, headers, body }), engine);
+    const result = await handleApi(new Request(url, { method: request.method, headers, body }), runtime);
     response.writeHead(result.status, Object.fromEntries(result.headers));
     response.end(Buffer.from(await result.arrayBuffer()));
   } catch (error) {

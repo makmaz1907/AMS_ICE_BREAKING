@@ -22,7 +22,8 @@ export interface Store {
   scores(gameId: string, series: number): Promise<Record<string, number>>;
   listSubmissions(roundId: string): Promise<Submission[]>;
   // Re-checks against the stored meta that the round is still open, rejects a repeated answer, records it and adds its score, all in one step.
-  addSubmission(roundId: string, submission: Submission): Promise<SubmitResult>;
+  // meta must be the snapshot the round was read from: its gameId and series pick the score table.
+  addSubmission(meta: Pick<Meta, "gameId" | "series">, roundId: string, submission: Submission): Promise<SubmitResult>;
   getCache(key: string): Promise<string | null>;
   setCache(key: string, value: string, ttlSeconds: number): Promise<void>;
   // Counts hits on key within a fixed window and returns the new count.
@@ -31,6 +32,7 @@ export interface Store {
 
 export function initialMeta(): Meta { return { gameId: crypto.randomUUID(), series: 0, rev: 0, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null }; }
 export function isActive(meta: Meta) { return meta.phase === "word" || meta.phase === "number"; }
+export function isExpired(meta: Meta, now: number) { return isActive(meta) && meta.pausedRemainingMs === null && meta.round !== null && now >= meta.round.endsAt; }
 export function isRoundOpen(meta: Meta, roundId: string, now: number) { return isActive(meta) && meta.round?.id === roundId && meta.pausedRemainingMs === null && now < meta.round.endsAt; }
 export function submissionKey(submission: Submission) { return `${submission.teamId}\u0000${submission.answer}`; }
 
@@ -53,12 +55,12 @@ export function createMemoryStore(): Store {
     async saveTeam(gameId, team) { tableFor(teams, gameId).set(team.id, { ...team }); },
     async scores(gameId, series) { return Object.fromEntries(scores.get(`${gameId}:${series}`) ?? []); },
     async listSubmissions(roundId) { return [...(submissions.get(roundId)?.values() ?? [])].map((submission) => structuredClone(submission)); },
-    async addSubmission(roundId, submission) {
+    async addSubmission(owner, roundId, submission) {
       if (!isRoundOpen(meta, roundId, Date.now())) return "closed";
       const round = tableFor(submissions, roundId);
       if (round.has(submissionKey(submission))) return "duplicate";
       round.set(submissionKey(submission), structuredClone(submission));
-      if (submission.status === "accepted") { const table = tableFor(scores, `${meta.gameId}:${meta.series}`); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + submission.score); }
+      if (submission.status === "accepted") { const table = tableFor(scores, `${owner.gameId}:${owner.series}`); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + submission.score); }
       return "ok";
     },
     async getCache(key) { const entry = cache.get(key); return entry && entry.expiresAt > Date.now() ? entry.value : null; },

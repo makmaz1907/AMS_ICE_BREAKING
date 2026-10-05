@@ -19,19 +19,24 @@ export function useGame() {
   const [online, setOnline] = useState<boolean | null>(null);
   const latest = useRef(-1);
   const offset = useRef(0);
-  const apply = useCallback((next: GameState) => {
+  // A ?v= response may come from the CDN cache and carry an old serverNow, so only fresh responses correct the clock offset.
+  const apply = useCallback((next: GameState, fresh = true) => {
     if (next.version < latest.current) return;
     latest.current = next.version;
-    offset.current = next.serverNow - Date.now();
+    if (fresh) offset.current = next.serverNow - Date.now();
     setState(next);
   }, []);
-  const refresh = useCallback(() => fetch("/api/state", { cache: "no-store" }).then((response) => response.json() as Promise<GameState>).then(apply).catch(() => setOnline(false)), [apply]);
+  const refresh = useCallback((version?: number) => fetch(version === undefined ? "/api/state" : `/api/state?v=${version}`, { cache: "no-store" }).then((response) => response.json() as Promise<GameState>).then((next) => apply(next, version === undefined)).catch(() => undefined), [apply]);
   useEffect(() => {
-    const unsubscribe = subscribe((version) => { if (version > latest.current) refresh(); }, (connected) => { setOnline(connected); if (connected) refresh(); });
-    const poll = window.setInterval(refresh, 15_000);
+    const unsubscribe = subscribe((version) => { if (version > latest.current) refresh(version); }, (connected) => { setOnline(connected); if (connected) refresh(); });
     refresh();
-    return () => { unsubscribe(); window.clearInterval(poll); };
+    return unsubscribe;
   }, [refresh]);
+  // Polling is only a safety net for missed notifications: rare while connected, frequent while not.
+  useEffect(() => {
+    const poll = window.setInterval(() => refresh(), online ? 60_000 : 5_000);
+    return () => window.clearInterval(poll);
+  }, [online, refresh]);
   const active = state.phase === "word" || state.phase === "number";
   const endsAt = state.round?.endsAt;
   useEffect(() => {

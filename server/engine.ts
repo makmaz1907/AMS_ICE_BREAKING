@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import rawConfig from "../config/game.json" with { type: "json" };
 import { hostPin, hostToken, pinMatches, readTeamToken, teamToken } from "./auth.js";
 import { createNumberRound, evaluateNumberExpression, scoreNumber } from "./numberGame.js";
-import { initialMeta, isActive, isRoundOpen, type Meta, type Store, type Submission } from "./store.js";
+import { initialMeta, isActive, isExpired, isRoundOpen, type Meta, type Store, type Submission } from "./store.js";
 import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wordGame.js";
 
@@ -12,6 +12,7 @@ export type Notifier = { publish(version: number): Promise<void> };
 export type Result = { ok: boolean; message?: string };
 export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset";
 export type Engine = ReturnType<typeof createEngine>;
+type PublicState = Record<string, unknown> & { version: number };
 
 const defaults: GameConfig = { rounds: [{ type: "word", durationSeconds: 60 }, { type: "word", durationSeconds: 60 }, { type: "word", durationSeconds: 60 }, { type: "number", durationSeconds: 90 }, { type: "number", durationSeconds: 90 }], teamMode: "team", predefinedTeams: [], themedWord: "", targetNumber: null, targetDescription: "" };
 const parsed = rawConfig as Partial<GameConfig>;
@@ -33,7 +34,7 @@ export function createEngine(store: Store, notifier: Notifier) {
   }
   function finished(meta: Meta): Meta { return { ...meta, pausedRemainingMs: null, phase: meta.matchRound >= config.rounds.length ? "game-results" : "round-results" }; }
   // There is no server timer on Vercel: whoever notices an expired round first closes it. Safe to call any number of times.
-  function tick() { return mutate((meta) => isActive(meta) && meta.pausedRemainingMs === null && meta.round && Date.now() >= meta.round.endsAt ? finished(meta) : null); }
+  function tick() { return mutate((meta) => isExpired(meta, Date.now()) ? finished(meta) : null); }
 
   const commands: Record<HostAction, (meta: Meta, seconds: number) => Meta | null> = {
     start: (meta) => {
@@ -72,11 +73,11 @@ export function createEngine(store: Store, notifier: Notifier) {
     return { type: "number" as const, id: round.id, numbers: round.numbers, target: round.target, description: round.description, endsAt: round.endsAt, durationSeconds };
   }
 
-  async function state() {
-    await tick();
+  async function state(): Promise<PublicState> {
     // Read the version before the data, so a client may refetch needlessly but never keeps a stale state under a newer version.
     const version = await store.readVersion();
     const meta = await store.readMeta();
+    if (isExpired(meta, Date.now())) { await tick(); return state(); }
     const teams = await rankedTeams(meta);
     const roundType = config.rounds[meta.matchRound - 1]?.type ?? null;
     const showResults = meta.phase === "round-results" || meta.phase === "game-results";
@@ -143,7 +144,7 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (!item.buildValid) return fail("letters" in round ? "Kelime verilen harfler ve jokerle oluşturulmalı." : "İfade kurallara uymuyor.");
       if ("letters" in round && !item.dictionaryValid) return fail("Kelime TDK sözlüğünde bulunamadı.");
       // The round may have ended or been paused during the TDK lookup; addSubmission re-checks that atomically before scoring.
-      const result = await store.addSubmission(round.id, item);
+      const result = await store.addSubmission(meta, round.id, item);
       if (result === "closed") return fail(closedMessage);
       if (result === "duplicate") return fail("Bu cevabı zaten gönderdiniz.");
       await changed();

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `bir-kelime-bir-islem` is a Turkish real-time ice-breaker game ("Bir Kelime Bir İşlem"): a Vite/React/TypeScript client plus a stateless HTTP API meant for Vercel. The host/projector screen is `/host` (any non-`/join` path); participants join on phones at `/join`. All UI text is Turkish.
 
-**Migration in progress (branch `vercel-migration`).** Express and Socket.IO were replaced by an HTTP API (step 3b, done). Step 3c adds a Redis store (Upstash) and Ably notifications so the API runs on Vercel; until then only the in-memory mode works, and only locally. Step 4 adds host approval of joining teams.
+**Migration status (branch `vercel-migration`).** Express and Socket.IO were replaced by an HTTP API that runs on Vercel (`fra1`) with Upstash Redis for state and Ably for change notifications (steps 3a–3c, done). Locally the same API runs in-memory without any keys. Step 4 (not started) adds host approval of joining teams.
 
 `AGENTS.md` and `DEV_NOTES.md` (in Turkish) predate the migration; see "Stale documentation" below.
 
@@ -18,7 +18,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 There are no tests or linters. **`npm run build` is the only automated validation.** For behavior changes, run `npm run dev`, open `http://localhost:5173/host` (PIN `1234` locally), and join from another browser or a phone using the LAN URL in the QR code. On a phone, `localhost` points at the phone itself.
 
-Env vars: `PORT` (dev server, default 3000), `HOST_PIN`, `APP_SECRET`. Locally `HOST_PIN` defaults to `1234` and `APP_SECRET` to a random per-process value. On Vercel (`VERCEL` set) neither has a default: without `HOST_PIN` host login is disabled, and without `APP_SECRET` no tokens can be issued. Vite proxies `/api` to `localhost:3000`.
+Env vars:
+- `HOST_PIN`, `APP_SECRET`: locally they default to `1234` and a random per-process value. On Vercel (`VERCEL` set) neither has a default: without `HOST_PIN` host login is disabled, and without `APP_SECRET` no tokens can be issued. Production and Preview have different values for both.
+- `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or the Marketplace names `KV_REST_API_URL` / `KV_REST_API_TOKEN`): when set, the Redis store is used, otherwise the in-memory one.
+- `ABLY_API_KEY`: when set, notifications go over Ably, otherwise over the dev server's SSE.
+- `BKB_KEY_PREFIX` (optional): Redis key prefix, default `bkb:<VERCEL_ENV or dev>:`, so Preview and Production share one database without touching each other's data. The Ably channel is `bkb-<VERCEL_ENV or dev>`.
+- `PORT`: dev server port, default 3000.
+
+The Vercel variables are marked Sensitive, so `vercel env pull` can't fetch them; test Redis behavior against a preview deployment, not locally. Preview deployments are behind Vercel Deployment Protection (scripts need the `x-vercel-protection-bypass` header). Vite proxies `/api` to `localhost:3000`. The Redis free tier is from upstash.com directly; the Vercel Marketplace listing offered only paid plans.
 
 ## Code style
 
@@ -30,25 +37,27 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 
 **Layers** (`server/`):
 - `engine.ts` holds all game rules and phase transitions. It talks to storage only through the `Store` interface and announces changes through a `Notifier`.
-- `store.ts` defines `Store`, the `Meta` record and `createMemoryStore()`. Every `Store` method must be atomic on its own. The Redis store (step 3c) must implement the same contract with Lua scripts.
+- `store.ts` defines `Store`, the `Meta` record and `createMemoryStore()`. Every `Store` method must be atomic on its own.
+- `redisStore.ts` implements the same contract on Upstash Redis, using Lua scripts for the compare-and-set of `Meta`, for `addSubmission` (which mirrors `isRoundOpen()`; keep the two in sync) and for the login counter. The client runs with `automaticDeserialization: false`, so values are raw strings and `HGETALL` returns a flat `[field, value, …]` list. Game data expires 2 days after its last write.
+- `ably.ts` publishes versions over Ably REST and issues subscribe-only token requests for the browsers.
 - `api.ts` (`handleApi`) is the single router for all `/api/*` routes, shared by Vercel and local dev.
-- `api/[...path].ts` is the Vercel entry. It is one catch-all function because Hobby allows at most 12 functions per deployment, so add routes in `server/api.ts`, never as new files under `api/`.
+- `api/[...path].ts` is the Vercel entry. It is one catch-all function because Hobby allows at most 12 functions per deployment, so add routes in `server/api.ts`, never as new files under `api/`. Route names must be a single path segment (`host-login`, not `host/login`): nested paths return Vercel's 404 without reaching the function.
 - `dev.ts` is the local stand-in for Vercel. It adds two dev-only routes: `/api/events` (SSE in place of Ably) and `/api/join-url` (LAN address for the QR code).
-- `runtime.ts` wires the store and notifier together.
+- `runtime.ts` picks the store and transport from the env vars and wires them into the engine.
 - `auth.ts` issues HMAC-signed tokens.
 - `tdk.ts` does the TDK lookup.
 
 **State:** `Meta` (`gameId`, `series`, `rev`, `phase`, `matchRound`, `round`, `pausedRemainingMs`) is a single record changed only through `mutate()`, which retries a compare-and-set on `rev`. Teams, scores (keyed by `gameId` + `series`) and submissions (keyed by round id) are stored separately. `gameId` changes on "Oyunu sıfırla", which invalidates every team token. `series` changes when a new game starts after the last round: scores start fresh and teams are kept. `config/game.json` is fixed at build/start time.
 
-**Change flow:** every change bumps a global `version` and publishes only that number (SSE locally, Ably in 3c). Clients then refetch `GET /api/state`. Clients never patch state locally. `state()` reads `version` *before* the data, so a client may refetch needlessly but never pairs a stale state with a newer version. State hides `submissions` while a round is active and strips the number round's `solution` (it appears only as `numberSolution` in `round-results`).
+**Change flow:** every change bumps a global `version` and publishes only that number (SSE locally, Ably on Vercel; `GET /api/realtime` tells the client which). Clients then refetch `GET /api/state?v=<version>`. That response is CDN-cacheable (`s-maxage=30`), so many phones asking for the same version cost one function run; responses without `?v` are `no-store`, and only those correct the client's clock offset. Polling is a fallback only (60s while connected, 5s while not). Clients never patch state locally. `state()` reads `version` *before* the data, so a client may refetch needlessly but never pairs a stale state with a newer version. State hides `submissions` while a round is active and strips the number round's `solution` (it appears only as `numberSolution` in `round-results`).
 
 **No server timers.** A round closes lazily: `tick()` closes it if `endsAt` has passed and it isn't paused. `GET /api/state` and `POST /api/tick` both call `tick()`, and the clients (`useGame` in `src/game.ts`) call `/api/tick` when their countdown reaches zero, retrying every 2s. The CAS in `mutate()` guarantees that exactly one caller performs each transition. Pause stores `pausedRemainingMs`, resume recomputes `endsAt`, and the state's `serverNow` lets clients correct for clock skew.
 
-**Identity:** `POST /api/join` returns `{ gameId, teamId, token }`. The token is `HMAC(gameId|teamId)` and the phone stores it in `localStorage` as `bkb-team-token`, along with `bkb-team-id` and `bkb-team-name`. Public state exposes only `teamId`, never the token. A join with a token from the current game keeps the team (and its score). A token from an older `gameId` creates a new team, and `JoinPage` rejoins automatically when it sees a new `gameId`. Host login (`POST /api/host/login`, limited to 10 tries per IP per 10 min) returns a 12h host token, which the host page keeps in `sessionStorage` (`bkb-host-token`). `POST /api/host/command` requires it as a `Bearer` token and returns 401 otherwise.
+**Identity:** `POST /api/join` returns `{ gameId, teamId, token }`. The token is `HMAC(gameId|teamId)` and the phone stores it in `localStorage` as `bkb-team-token`, along with `bkb-team-id` and `bkb-team-name`. Public state exposes only `teamId`, never the token. A join with a token from the current game keeps the team (and its score). A token from an older `gameId` creates a new team, and `JoinPage` rejoins automatically when it sees a new `gameId`. Host login (`POST /api/host-login`, limited to 10 tries per IP per 10 min) returns a 12h host token, which the host page keeps in `sessionStorage` (`bkb-host-token`). `POST /api/host-command` requires it as a `Bearer` token and returns 401 otherwise.
 
 **Submissions (`POST /api/submit`):** word validation awaits a TDK lookup. Afterwards `store.addSubmission()` atomically re-checks that the round is still open (same round id, active, not paused, before `endsAt`), rejects an identical repeat, records the answer and adds its score. Keep that re-check inside the store operation; a check in the engine alone is racy. A team may submit several distinct answers per round, and each accepted one scores.
 
-**Word validation** (`server/wordGame.ts` + `server/tdk.ts`): `canBuildWord` checks the letters and allows one joker, only at the index the player marked (`jokerIndex`). The TDK check calls the live API (`https://sozluk.gov.tr/gts?ara=`) over `wordVariants()` (I/İ, O/Ö, U/Ü, G/Ğ, C/Ç are interchangeable), with a 5s timeout. Results are cached in the store for 7 days. A failed lookup returns an error and records nothing. Meanings are stored on the submission and shown on the host results screen. TDK has been confirmed reachable from Vercel `fra1`. `GET /api/tdk-check` is a temporary diagnostic to remove in 3c.
+**Word validation** (`server/wordGame.ts` + `server/tdk.ts`): `canBuildWord` checks the letters and allows one joker, only at the index the player marked (`jokerIndex`). The TDK check calls the live API (`https://sozluk.gov.tr/gts?ara=`) over `wordVariants()` (I/İ, O/Ö, U/Ü, G/Ğ, C/Ç are interchangeable), with a 5s timeout. Results are cached in the store for 7 days. A failed lookup returns an error and records nothing. Meanings are stored on the submission and shown on the host results screen. TDK has been confirmed reachable from Vercel `fra1`.
 
 **Number rounds** (`server/numberGame.ts`): 5 random digits 1–9 + one of {10,25,50,75,100}, target 100–999 (or `config.targetNumber` if in range). `evaluateNumberExpression` is a hand-written tokenizer/parser. **Never replace it with `eval`.** It allows each number at most once, requires exact division and keeps every intermediate result a positive integer. `solveNumbers()` runs at round creation. Score: exact 10, ±5 → 7, ±10 → 5.
 
