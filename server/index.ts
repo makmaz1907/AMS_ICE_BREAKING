@@ -5,14 +5,13 @@ import path from "node:path";
 import express from "express";
 import { Server } from "socket.io";
 import { createNumberRound, evaluateNumberExpression, scoreNumber, type NumberRound } from "./numberGame.js";
+import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord, type WordRound } from "./wordGame.js";
 
 type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
 type Team = { id: string; name: string; connected: boolean; score: number };
 type Submission = { teamId: string; answer: string; value?: number; dictionaryValid?: boolean; meanings?: string[]; buildValid: boolean; jokerUsed?: boolean; status: "accepted" | "rejected"; score: number };
-type TdkEntry = { madde?: string; anlamlarListe?: Array<{ anlam?: string }> };
-type TdkLookup = { valid: boolean; meanings: string[] };
 type GamePhase = "lobby" | "word" | "number" | "round-results" | "game-results";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -38,41 +37,12 @@ function loadConfig(): GameConfig {
   } catch { return defaults; }
 }
 
-function wordVariants(word: string) {
-  const alternatives: Record<string, string[]> = { I: ["I", "İ"], İ: ["I", "İ"], O: ["O", "Ö"], Ö: ["O", "Ö"], U: ["U", "Ü"], Ü: ["U", "Ü"], G: ["G", "Ğ"], Ğ: ["G", "Ğ"], C: ["C", "Ç"], Ç: ["C", "Ç"] };
-  return Array.from(word).reduce<string[]>((variants, letter) => variants.flatMap((variant) => (alternatives[letter] ?? [letter]).map((replacement) => `${variant}${replacement}`)), [""]);
-}
-
-function meaningsFor(entry: TdkEntry) {
-  return (entry.anlamlarListe ?? []).map((meaning) => meaning.anlam?.replace(/<[^>]*>/g, "").trim() ?? "").filter(Boolean);
-}
-
 async function isTdkWord(word: string): Promise<TdkLookup | null> {
   const cached = wordValidationCache.get(word);
   if (cached) return cached;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  try {
-    for (const variant of wordVariants(word)) {
-      const query = new URLSearchParams({ ara: variant.toLocaleLowerCase("tr-TR") });
-      const response = await fetch(`https://sozluk.gov.tr/gts?${query}`, { signal: controller.signal });
-      if (!response.ok) return null;
-      const results = await response.json() as TdkEntry[] | { error?: string };
-      if (!Array.isArray(results)) continue;
-      const entry = results.find((result) => normalizeTurkish(result.madde ?? "") === variant);
-      if (!entry) continue;
-      const lookup = { valid: true, meanings: meaningsFor(entry) };
-      wordValidationCache.set(word, lookup);
-      return lookup;
-    }
-    const lookup = { valid: false, meanings: [] };
-    wordValidationCache.set(word, lookup);
-    return lookup;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const lookup = await lookupTdk(word);
+  if (lookup) wordValidationCache.set(word, lookup);
+  return lookup;
 }
 
 function localAddress() {
