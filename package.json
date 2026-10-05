@@ -1,0 +1,35 @@
+{
+  "name": "bir-kelime-bir-islem",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite --host 0.0.0.0",
+    "start": "tsx server/index.ts",
+    "build": "tsc -b && vite build"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode.react": "^4.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
+  }
+}

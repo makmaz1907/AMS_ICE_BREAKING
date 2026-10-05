@@ -1,0 +1,14 @@
+:root {
+  --brand-primary: #0072BC;
+  --brand-secondary: #070F26;
+  --brand-accent: #00DFED;
+  --brand-blue-150: #005B96;
+  --brand-blue-50: #19A3FC;
+  --brand-green: #00CB5D;
+  --brand-yellow: #FFC400;
+  --brand-text: #2E404D;
+  --brand-grey-50: #E8E8E8;
+  font-family: "Noto Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #FFFFFF;
+  background: var(--brand-secondary);
+}

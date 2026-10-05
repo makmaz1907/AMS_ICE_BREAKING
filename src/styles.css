@@ -1,0 +1,46 @@
+@import "./theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body { min-width: 320px; min-height: 100vh; margin: 0; }
+button, input { font: inherit; }
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 70% 42% at 100% 0%, rgb(0 114 188 / 34%), transparent 72%),
+    linear-gradient(135deg, #070F26 0%, #0A1C3A 52%, #005B96 160%);
+}
+
+.panel {
+  border: 1px solid rgb(255 255 255 / 16%);
+  background: rgb(7 15 38 / 82%);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(14px);
+}
+
+button {
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 20%);
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid var(--brand-accent);
+  outline-offset: 3px;
+}
+
+.confetti {
+  background-image: radial-gradient(circle at 10% 15%, #37c6be 0 5px, transparent 6px), radial-gradient(circle at 85% 10%, #fbbf24 0 5px, transparent 6px), radial-gradient(circle at 20% 90%, #f472b6 0 5px, transparent 6px), radial-gradient(circle at 90% 80%, #a78bfa 0 5px, transparent 6px);
+  animation: celebration 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes celebration {
+  to { transform: translateY(-4px); }
+}

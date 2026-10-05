@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env*.local
+.vercel/
+.axet-code/
+NTT DATA Brand Cheat Sheet.pdf
+data/turkish-words.json
