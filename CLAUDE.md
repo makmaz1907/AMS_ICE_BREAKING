@@ -19,6 +19,12 @@ There are no tests or linters. **`npm run build` is the only automated validatio
 
 Env vars: `PORT` (default 3000), `HOST_PIN` (default 1234). In dev, Vite proxies `/api` and `/socket.io` (with websockets) to `localhost:3000`.
 
+## Code style
+
+The whole codebase is about 500 lines. `server/index.ts` is under 200 lines, and the pages are under 50 each, because the code is extremely dense: most functions, socket handlers, and React components sit on a single line, often hundreds of characters long. Read whole files rather than searching them. Match the compact style when you edit. Long lines make exact-match edits fragile, so take `old_string` from a fresh read.
+
+Server modules are native ESM and import siblings with a `.js` suffix (`./numberGame.js`) even though the files are `.ts`. There is a single `tsconfig.json` (`noEmit`) covering `src`, `server`, and `vite.config.ts`.
+
 ## Architecture
 
 **The server is the single source of truth, and all state lives in memory.** `server/index.ts` keeps module-level variables (`teams`, `phase`, `activeRound`, `submissions`, `roundTimer`, `matchRound`, `pausedRemainingMs`). Restarting the server resets the game. `config/game.json` is read once at startup. If it is missing or invalid, the server uses the defaults in `loadConfig()`.
@@ -32,6 +38,8 @@ Env vars: `PORT` (default 3000), `HOST_PIN` (default 1234). In dev, Vite proxies
 **Phases:** `lobby` → (`word` | `number`) → `round-results` → … → `game-results`. `host:round:start` advances `matchRound` through `config.rounds`. Starting again after the last round resets scores and starts a new game. A `setTimeout` (`roundTimer`) calls `finishRound()`. Pause and add-time work by recomputing `activeRound.endsAt` and rescheduling the timer. Clients render their countdown from `endsAt`.
 
 **Socket events** (colon-separated): `host:authenticate`, `host:round:start|finish|pause|add-time`, `host:teams:reset`, `team:join`, `round:submit`, `game:state:request`; the server emits `game:state`. Acknowledgement callbacks have the shape `{ ok, message? }`, and the clients depend on it. Note: the PIN check only gates the host UI. The `host:*` events themselves are not authenticated on the server.
+
+**HTTP endpoints** (`server/index.ts`): `/api/health`, `/api/join-url?port=` (the LAN URL for the QR code; the host page passes its own port so the QR code points at Vite's 5173 in dev and at 3000 in prod), `/api/results.json`, and `/api/results.csv` (UTF-8 with a BOM so Excel shows Turkish characters correctly). Everything else is served statically from `dist`.
 
 **Submissions (`round:submit`):** validation is async for word rounds. The handler records `activeRound.id`, awaits validation, then **re-checks** the phase, round id, pause state and deadline before scoring. Keep this re-check whenever you touch the handler. Each team can submit several distinct answers per round. Every accepted answer adds to the score, and an identical repeat is rejected.
 
@@ -52,5 +60,5 @@ Env vars: `PORT` (default 3000), `HOST_PIN` (default 1234). In dev, Vite proxies
 
 ## Stale documentation
 
-- `DEV_NOTES.md` and the AGENTS.md checklist mention host manual word approval and `data/turkish-words.json`. The current code has no manual review: TDK lookup alone decides validity, and nothing imports `data/turkish-words.json`.
+- `DEV_NOTES.md` and the AGENTS.md checklist mention host manual word approval and `data/turkish-words.json`. The current code has no manual review: TDK lookup alone decides validity, and nothing imports `data/turkish-words.json`. That file is also gitignored, so it exists only locally.
 - `DEV_NOTES.md` lists a hard-coded working directory from another machine. Ignore it.
