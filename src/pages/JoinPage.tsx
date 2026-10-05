@@ -1,10 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { socket } from "../socket";
-import type { GameState, NumberRound, WordRound } from "../types";
+import { post, useGame } from "../game";
+import type { NumberRound, WordRound } from "../types";
 
-const storageKey = "bkb-session-id";
-const emptyState: GameState = { phase: "lobby", teams: [], round: null, submissions: [], matchRound: 0, totalRounds: 0, roundType: null, teamMode: "team", winner: null, numberSolution: null, themedWord: null, paused: false };
-function getSessionId() { const existing = localStorage.getItem(storageKey); if (existing) return existing; const created = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`; localStorage.setItem(storageKey, created); return created; }
+const tokenKey = "bkb-team-token";
+const teamIdKey = "bkb-team-id";
+const nameKey = "bkb-team-name";
+function storedValue(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
+function storeValue(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* storage blocked: the team rejoins as a new team after a reload */ } }
+// One join at a time: page load and a game reset can both trigger one, and parallel joins without a valid token would create duplicate teams.
+let joining: Promise<void> | null = null;
 function normalize(value: string) { return value.toLocaleUpperCase("tr-TR"); }
 function matchingLetterIndex(available: string[], letter: string) { const variants = letter === "I" || letter === "İ" ? ["I", "İ"] : letter === "O" || letter === "Ö" ? ["O", "Ö"] : letter === "U" || letter === "Ü" ? ["U", "Ü"] : letter === "G" || letter === "Ğ" ? ["G", "Ğ"] : letter === "C" || letter === "Ç" ? ["C", "Ç"] : [letter]; return available.findIndex((candidate) => variants.includes(candidate)); }
 type Tile = { letter: string; joker: boolean };
@@ -16,11 +20,14 @@ function tilesText(tiles: Tile[]) { return tiles.map((tile) => tile.letter).join
 function jokerPosition(tiles: Tile[]) { const index = tiles.findIndex((tile) => tile.joker); return index >= 0 ? index : null; }
 
 export function JoinPage() {
-  const [name, setName] = useState(localStorage.getItem("bkb-team-name") ?? ""); const [joined, setJoined] = useState(false); const [state, setState] = useState<GameState>(emptyState); const [answer, setAnswer] = useState(""); const [tiles, setTiles] = useState<Tile[]>([]); const [pickingJoker, setPickingJoker] = useState(false); const [submitted, setSubmitted] = useState(false); const [error, setError] = useState(""); const [status, setStatus] = useState("Bağlanıyor…");
-  const mine = useMemo(() => state.submissions.filter((item) => item.teamId === getSessionId()), [state.submissions]);
-  function join(teamName: string) { const cleaned = teamName.trim(); if (!cleaned) return setError("Geçerli bir takım adı girin."); const send = () => socket.timeout(10_000).emit("team:join", { sessionId: getSessionId(), name: cleaned }, (timeout: Error | null, result?: { ok: boolean; message?: string }) => { if (timeout) return setError("Sunucu yanıt vermedi."); if (!result?.ok) return setError(result?.message ?? "Katılım yapılamadı."); localStorage.setItem("bkb-team-name", cleaned); setJoined(true); setError(""); }); if (socket.connected) send(); else socket.connect().once("connect", send); }
-  useEffect(() => { const update = (next: GameState) => { setState(next); if (next.phase === "word" || next.phase === "number") { setSubmitted(false); setAnswer(""); setTiles([]); setPickingJoker(false); } }; const reconnect = () => { setStatus("Bağlantı kuruldu"); socket.emit("game:state:request"); const saved = localStorage.getItem("bkb-team-name"); if (saved) join(saved); }; socket.on("game:state", update); socket.on("connect", reconnect); socket.on("disconnect", () => setStatus("Bağlantı yeniden kuruluyor…")); socket.on("connect_error", () => setStatus("Sunucuya bağlanılamadı")); if (socket.connected) reconnect(); return () => { socket.off("game:state", update); socket.off("connect", reconnect); socket.off("disconnect"); socket.off("connect_error"); }; }, []);
-  function submit(event?: FormEvent) { event?.preventDefault(); const payload = state.phase === "word" ? { answer: tilesText(tiles), jokerIndex: jokerPosition(tiles) } : { answer }; socket.emit("round:submit", payload, (result: { ok: boolean; message?: string }) => { if (result.ok) { setSubmitted(false); setAnswer(""); setTiles([]); setPickingJoker(false); setError(""); } else setError(result.message ?? "Cevap gönderilemedi."); }); }
+  const { state, online } = useGame(); const [name, setName] = useState(storedValue(nameKey) ?? ""); const [joinedGameId, setJoinedGameId] = useState<string | null>(null); const [answer, setAnswer] = useState(""); const [tiles, setTiles] = useState<Tile[]>([]); const [pickingJoker, setPickingJoker] = useState(false); const [submitted, setSubmitted] = useState(false); const [error, setError] = useState("");
+  const joined = joinedGameId !== null; const status = online === null ? "Bağlanıyor…" : online ? "Bağlantı kuruldu" : "Bağlantı yeniden kuruluyor…";
+  const mine = useMemo(() => state.submissions.filter((item) => item.teamId === storedValue(teamIdKey)), [state.submissions]);
+  function join(teamName: string) { const cleaned = teamName.trim(); if (!cleaned) return setError("Geçerli bir takım adı girin."); if (joining) return; joining = post<{ gameId: string; teamId: string; token: string }>("/api/join", { name: cleaned, token: storedValue(tokenKey) }).then((result) => { if (!result.ok) return setError(result.message ?? "Katılım yapılamadı."); storeValue(tokenKey, result.token); storeValue(teamIdKey, result.teamId); storeValue(nameKey, cleaned); setJoinedGameId(result.gameId); setError(""); }).finally(() => { joining = null; }); }
+  // Rejoin with the saved team on page load, and again after the host resets the game (new gameId).
+  useEffect(() => { const saved = storedValue(nameKey); if (saved && storedValue(tokenKey) && state.gameId && state.gameId !== joinedGameId) join(saved); }, [state.gameId, joinedGameId]);
+  useEffect(() => { setSubmitted(false); setAnswer(""); setTiles([]); setPickingJoker(false); }, [state.round?.id]);
+  function submit(event?: FormEvent) { event?.preventDefault(); const payload = state.phase === "word" ? { answer: tilesText(tiles), jokerIndex: jokerPosition(tiles) } : { answer }; post("/api/submit", { ...payload, token: storedValue(tokenKey) }).then((result) => { if (result.ok) { setSubmitted(false); setAnswer(""); setTiles([]); setPickingJoker(false); setError(""); } else setError(result.message ?? "Cevap gönderilemedi."); }); }
   function add(value: string) { if (!state.round || submitted) return; if (state.round.type === "word") { const next = [...tiles, { letter: value, joker: false }]; if (canBuild(next, state.round)) setTiles(next); } else setAnswer((current) => `${current}${value}`); }
   function addJoker(letter: string, round: WordRound) { const next = [...tiles, { letter, joker: true }]; if (canBuild(next, round)) setTiles(next); setPickingJoker(false); }
   // Typing appends or trims tiles so an existing joker survives; any other edit is re-read as plain round letters.
