@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import rawConfig from "../config/game.json" with { type: "json" };
 import { hostPin, hostToken, pinMatches, readTeamToken, teamToken } from "./auth.js";
-import { createNumberRound, evaluateNumberExpression, scoreNumber } from "./numberGame.js";
+import { createNumberRound, evaluateNumberExpression, scoreNumberRound, type NumberRound } from "./numberGame.js";
 import { approvalOn, initialMeta, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
 import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wordGame.js";
@@ -39,7 +39,27 @@ export function createEngine(store: Store, notifier: Notifier) {
   }
   function finished(meta: Meta): Meta { return { ...meta, pausedRemainingMs: null, phase: meta.matchRound >= config.rounds.length ? "game-results" : "round-results" }; }
   // There is no server timer on Vercel: whoever notices an expired round first closes it. Safe to call any number of times.
-  function tick() { return mutate((meta) => isExpired(meta, Date.now()) ? finished(meta) : null); }
+  function tick() { return close((meta) => isExpired(meta, Date.now()) ? finished(meta) : null); }
+  // Closes the active round. Only the request whose compare-and-set actually closed it scores a number round, so points are given once.
+  async function close(change: (meta: Meta) => Meta | null) {
+    const next = await mutate(change);
+    if (next?.round && "numbers" in next.round) await awardNumberRound(next, next.round);
+    return next;
+  }
+  async function awardNumberRound(meta: Meta, round: NumberRound) {
+    const [submissions, teams] = await Promise.all([store.listSubmissions(round.id), store.listTeams(meta.gameId)]);
+    const approved = new Set(teams.filter((team) => statusOf(team) === "approved").map((team) => team.id));
+    const best = new Map<string, Submission>();
+    for (const submission of submissions) {
+      if (submission.status !== "accepted" || submission.value === undefined || !approved.has(submission.teamId)) continue;
+      const current = best.get(submission.teamId);
+      if (!current || Math.abs(submission.value - round.target) < Math.abs(current.value! - round.target)) best.set(submission.teamId, submission);
+    }
+    const points = scoreNumberRound([...best.values()].map((submission) => ({ teamId: submission.teamId, value: submission.value! })), round.target);
+    if (!best.size) return;
+    await store.awardScores(meta, round.id, [...best.values()].map((submission) => ({ submission, points: points.get(submission.teamId) ?? 0 })));
+    await changed();
+  }
 
   const commands: Record<HostAction, (meta: Meta, body: Body) => Meta | null> = {
     start: (meta) => {
@@ -128,7 +148,8 @@ export function createEngine(store: Store, notifier: Notifier) {
   function validateNumber(teamId: string, expression: string, round: NonNullable<Meta["round"]>): Submission {
     const result = "numbers" in round ? evaluateNumberExpression(expression, round.numbers) : { valid: false, message: "Tur bulunamadı." };
     if (!result.valid || !("target" in round)) return { teamId, answer: expression, buildValid: false, status: "rejected", score: 0 };
-    return { teamId, answer: expression, value: result.value, buildValid: true, status: "accepted", score: scoreNumber(result.value!, round.target) };
+    // Scored later, when the round closes (awardNumberRound).
+    return { teamId, answer: expression, value: result.value, buildValid: true, status: "accepted", score: 0 };
   }
 
   return {
@@ -152,7 +173,8 @@ export function createEngine(store: Store, notifier: Notifier) {
         return { ok: true };
       }
       if (typeof action !== "string" || !(action in commands)) return fail("Bilinmeyen komut.");
-      const next = await mutate((meta) => commands[action as HostAction](meta, body));
+      const change = (meta: Meta) => commands[action as HostAction](meta, body);
+      const next = action === "finish" ? await close(change) : await mutate(change);
       // Turning approval off lets everyone who is still waiting in.
       if (action === "approval" && next && !approvalOn(next)) await approveAll(next);
       return { ok: true };
@@ -195,7 +217,7 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (result === "closed") return fail(closedMessage);
       if (result === "duplicate") return fail("Bu cevabı zaten gönderdiniz.");
       await changed();
-      return { ok: true, message: "Cevabınız alındı." };
+      return { ok: true, message: "letters" in round ? "Cevabınız alındı." : "Cevabınız alındı. Puanlar tur sonunda verilecek." };
     },
     async hostLogin(pin: unknown, client: string) {
       if (!hostPin) return fail("Host PIN'i sunucuda tanımlı değil.");

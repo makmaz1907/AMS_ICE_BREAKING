@@ -110,7 +110,11 @@ export function evaluateNumberExpression(expression: string, availableNumbers: n
   }
 }
 
-export function scoreNumber(value: number, target: number) {
-  const difference = Math.abs(value - target);
-  return difference === 0 ? 10 : difference <= 5 ? 7 : difference <= 10 ? 5 : 0;
+// Scores a number round from each team's closest answer, once the round has closed.
+// If anyone hit the target exactly, they get 10 and everyone else 0. Otherwise teams are ranked by distance and get N, N-1, … 1,
+// where N is the number of teams with a valid answer; equal distances share a place (N minus the number of teams strictly closer).
+export function scoreNumberRound(best: Array<{ teamId: string; value: number }>, target: number) {
+  const distances = best.map((entry) => ({ teamId: entry.teamId, distance: Math.abs(entry.value - target) }));
+  if (distances.some((entry) => entry.distance === 0)) return new Map(distances.map((entry) => [entry.teamId, entry.distance === 0 ? 10 : 0]));
+  return new Map(distances.map((entry) => [entry.teamId, distances.length - distances.filter((other) => other.distance < entry.distance).length]));
 }

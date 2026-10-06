@@ -27,6 +27,8 @@ export interface Store {
   // Re-checks against the stored meta that the round is still open, rejects a repeated answer, records it and adds its score, all in one step.
   // meta must be the snapshot the round was read from: its gameId and series pick the score table.
   addSubmission(meta: Pick<Meta, "gameId" | "series">, roundId: string, submission: Submission): Promise<SubmitResult>;
+  // Number rounds only: records each team's points on its best submission and adds them to the score table, in one step.
+  awardScores(owner: Pick<Meta, "gameId" | "series">, roundId: string, awards: Array<{ submission: Submission; points: number }>): Promise<void>;
   getCache(key: string): Promise<string | null>;
   setCache(key: string, value: string, ttlSeconds: number): Promise<void>;
   // Counts hits on key within a fixed window and returns the new count.
@@ -68,6 +70,11 @@ export function createMemoryStore(): Store {
       round.set(submissionKey(submission), structuredClone(submission));
       if (submission.status === "accepted") { const table = tableFor(scores, `${owner.gameId}:${owner.series}`); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + submission.score); }
       return "ok";
+    },
+    async awardScores(owner, roundId, awards) {
+      const round = tableFor(submissions, roundId);
+      const table = tableFor(scores, `${owner.gameId}:${owner.series}`);
+      for (const { submission, points } of awards) { round.set(submissionKey(submission), { ...structuredClone(submission), score: points }); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + points); }
     },
     async getCache(key) { const entry = cache.get(key); return entry && entry.expiresAt > Date.now() ? entry.value : null; },
     async setCache(key, value, ttlSeconds) { cache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 }); },

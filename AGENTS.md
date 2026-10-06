@@ -70,7 +70,7 @@ There are no test or lint scripts. Use `npm run build` as the validation command
 - Normalize Turkish text with `toLocaleUpperCase("tr-TR")` / `toLocaleLowerCase("tr-TR")`, never default casing, because `i`/`İ`/`ı`/`I` matter. Sort names with `localeCompare(..., "tr-TR")`.
 - Word rounds generate eight distinct letters (exactly three weighted vowels and five weighted consonants) plus one joker. The joker may stand only at the position the player marked. `I`/`İ`, `O`/`Ö`, `U`/`Ü`, `G`/`Ğ` and `C`/`Ç` are interchangeable when matching letters and looking words up.
 - Word validity is decided only by the live TDK dictionary (`https://sozluk.gov.tr/gts`). There is no manual review. A failed lookup returns an error and records nothing. Word rounds need internet access.
-- Word score is the letter count, with +5 for a nine-letter word without the joker. Number scores: exact 10, within 5 → 7, within 10 → 5.
+- Word score is the letter count, with +5 for a nine-letter word without the joker. Number rounds are scored when the round closes, from each team's closest answer: if anyone hit the target exactly, they get 10 and everyone else 0; otherwise the N teams with a valid answer get N, N-1, … 1 by distance (ties share the higher score), and teams without a valid answer get 0.
 - Number expressions support `+`, `-`, `*`, `/`, `×`, `÷` and parentheses. Each number may be used at most once, division must be exact, and every intermediate result must be a positive integer. Never replace `evaluateNumberExpression()` with `eval`.
 - The number round's best solution (`solveNumbers()`) is shown only in round results.
 - `JoinPage.tsx` duplicates the letter-matching and joker rules so phones can't type words they can't build. Change both copies together.

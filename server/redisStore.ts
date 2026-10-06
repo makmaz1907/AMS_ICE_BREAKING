@@ -28,6 +28,16 @@ if ARGV[5] == 'accepted' then
 end
 return 'ok'`;
 
+// ARGV: ttl, then (submission field, submission JSON with its points, teamId, points) per team.
+const awardScores = `
+for i = 2, #ARGV, 4 do
+  redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+  redis.call('HINCRBY', KEYS[2], ARGV[i + 2], ARGV[i + 3])
+end
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[2], ARGV[1])
+return 1`;
+
 const countHit = `
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
@@ -61,6 +71,10 @@ export function createRedisStore(prefix: string): Store {
     async listSubmissions(roundId) { return parse<Submission>(await redis.hvals(key("subs", roundId))); },
     async addSubmission(meta, roundId, submission): Promise<SubmitResult> {
       return redis.eval<string[], SubmitResult>(addSubmission, [key("meta"), key("subs", roundId), key("scores", meta.gameId, meta.series)], [roundId, submissionKey(submission), JSON.stringify(submission), String(Date.now()), submission.status, submission.teamId, String(submission.score), String(dataTtl)]);
+    },
+    async awardScores(owner, roundId, awards) {
+      if (!awards.length) return;
+      await redis.eval(awardScores, [key("subs", roundId), key("scores", owner.gameId, owner.series)], [String(dataTtl), ...awards.flatMap(({ submission, points }) => [submissionKey(submission), JSON.stringify({ ...submission, score: points }), submission.teamId, String(points)])]);
     },
     async getCache(cacheKey) { return redis.get<string>(key("cache", cacheKey)); },
     async setCache(cacheKey, value, ttlSeconds) { await redis.set(key("cache", cacheKey), value, { ex: ttlSeconds }); },

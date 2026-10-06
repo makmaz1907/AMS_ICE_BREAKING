@@ -66,7 +66,10 @@
 - Dört işlem ve parantez desteklenir.
 - `eval` kullanılmaz; `server/numberGame.ts` içindeki ayrıştırıcı kullanılır.
 - Her sayı en fazla bir kez kullanılabilir. Bölme tam olmalı, ara sonuçlar pozitif tam sayı olmalıdır.
-- Puan: tam isabet 10, ±5 için 7, ±10 için 5.
+- Puanlar tur kapanınca verilir; her takımın hedefe en yakın cevabı sayılır.
+  - Hedefi tam bulan varsa o takım(lar) 10 puan alır, diğer herkes 0.
+  - Tam isabet yoksa geçerli cevap veren N takım uzaklığa göre sıralanır: en yakın N, sonraki N-1, … en uzak 1 puan. Eşit uzaklıktakiler aynı puanı alır.
+  - Geçerli cevap göndermeyen takım 0 puan alır.
 - Sunucu tur başında en iyi çözümü hesaplar. Çözüm tur bitene kadar gizli kalır, sonra host ekranında gösterilir.
 
 ### Tema
