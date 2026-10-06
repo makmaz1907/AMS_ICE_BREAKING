@@ -18,7 +18,7 @@ const routes: Record<string, Route> = {
   "GET realtime": async ({ transport, channel }) => json({ transport, channel }),
   "GET ably-token": async ({ transport, channel }) => transport === "ably" ? json(await subscriberTokenRequest(channel)) : json({ ok: false, message: "Ably yapılandırılmamış." }, 404),
   "POST tick": async ({ engine }) => { await engine.tick(); return json(await engine.state()); },
-  "POST join": async ({ engine, body }) => json(await engine.join(body.name, body.token)),
+  "POST join": async ({ engine, body }) => json(await engine.join(body.name, body.token, body.rejoin === true)),
   "POST submit": async ({ engine, body }) => json(await engine.submit(body.token, body.answer, body.jokerIndex)),
   "POST host-login": async ({ engine, body, request }) => json(await engine.hostLogin(body.pin, clientAddress(request))),
   "POST host-command": async ({ engine, body, request }) => isHostToken(bearer(request)) ? json(await engine.command(body.action, body)) : unauthorized(),

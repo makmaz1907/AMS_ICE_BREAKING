@@ -179,7 +179,8 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (action === "approval" && next && !approvalOn(next)) await approveAll(next);
       return { ok: true };
     },
-    async join(rawName: unknown, token: unknown) {
+    // rejoinOnly: an automatic rejoin (page load, reconnect, game reset seen by an open page). It may only resume a team of the current game; it never creates one.
+    async join(rawName: unknown, token: unknown, rejoinOnly = false) {
       const name = typeof rawName === "string" ? rawName.trim().slice(0, 32) : "";
       if (!name) return fail("Geçerli bir takım adı girin.");
       const meta = await store.readMeta();
@@ -193,6 +194,8 @@ export function createEngine(store: Store, notifier: Notifier) {
         // A rejected or removed team may apply again, but only under a different name.
         if (sameName(existing.name, name)) return fail(refusal[status]);
       }
+      // The saved team belongs to a game that was reset: the phone must ask its player before applying again.
+      if (rejoinOnly) return { ok: false, expired: true, message: "" };
       const team: TeamRecord = { id: crypto.randomUUID(), name, status: approvalOn(meta) ? "pending" : "approved", joinedAt: Date.now() };
       await store.saveTeam(meta.gameId, team);
       await changed();

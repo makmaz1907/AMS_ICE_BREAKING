@@ -31,7 +31,7 @@
   - Host takımları tek tek onaylayabilir, reddedebilir veya "Tümünü onayla" diyebilir.
   - Host onaylı bir takımı sonradan çıkarabilir. Çıkarma iki tıklama ister ("Çıkar" → "Emin misiniz?").
   - Reddedilen veya çıkarılan takım yalnızca farklı bir adla tekrar başvurabilir. Onaylanan takımın adı sonradan değiştirilemez.
-- **Oyunu sıfırla:** takımları ve puanları siler, eski takım anahtarlarını geçersiz kılar. Telefonlar yeni oyuna kendiliğinden tekrar başvurur.
+- **Oyunu sıfırla:** takımları ve puanları siler, eski takım anahtarlarını geçersiz kılar. Telefonlar kendiliğinden başvurmaz: katılım formuna döner, eski ad kutuda hazır durur ve oyuncu "Oyuna katıl"a basınca yeni başvuru yapılır.
 
 ### Oyun akışı
 
