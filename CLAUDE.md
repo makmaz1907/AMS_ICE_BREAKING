@@ -60,6 +60,7 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 - Only approved teams can submit. Only they appear in `teams`, the results, `winner` and the exports.
 - The public state carries `statuses` (teamId → status, for teams that aren't approved) so a phone learns its own status, but never the names of those teams. Their names are only in `GET /api/host-state` (Bearer host token, never CDN-cached), which the host page reads instead of `/api/state`.
 - Host commands: `approve` (pending or rejected), `reject` (pending), `remove` (approved or pending), `approve-all`, `approval` `{ enabled }`.
+- `lobby` returns to the lobby (QR screen) from any phase, keeping the teams and the `gameId` but starting a new `series`, so scores begin at zero. `reset` additionally deletes every team. Both are reachable from every host screen and take two clicks (`ConfirmButton`).
 - A rejoin with a valid token never renames the team and writes nothing, so it can't race an approval. A rejected or removed team may join again only under a different name (compared case-insensitively in Turkish), which creates a new pending team.
 - The host screen is usually the projector, so pending names stay hidden until the host clicks "Göster". Removing a team from the scoreboard takes two clicks.
 

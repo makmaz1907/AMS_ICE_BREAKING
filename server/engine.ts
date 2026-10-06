@@ -10,7 +10,7 @@ type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
 export type Notifier = { publish(version: number): Promise<void> };
 export type Result = { ok: boolean; message?: string };
-export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "approval";
+export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval";
 type Body = Record<string, unknown>;
 export type Engine = ReturnType<typeof createEngine>;
 type PublicState = Record<string, unknown> & { version: number };
@@ -61,6 +61,8 @@ export function createEngine(store: Store, notifier: Notifier) {
     },
     // The host's approval setting survives a reset; everything else starts over.
     reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta) }),
+    // Back to the lobby (QR screen) from any phase, keeping the teams: a new series starts so scores begin at zero.
+    lobby: (meta) => meta.phase === "lobby" ? null : { ...meta, series: meta.series + 1, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null },
     approval: (meta, body) => typeof body.enabled === "boolean" && body.enabled !== approvalOn(meta) ? { ...meta, approvalRequired: body.enabled } : null,
   };
 
