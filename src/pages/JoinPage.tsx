@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
-import { Logo } from "../Brand";
+import { EventLogo, Logo } from "../Brand";
 import { post, useGame } from "../game";
 import type { NumberRound, WordRound } from "../types";
 
@@ -40,7 +40,7 @@ export function JoinPage() {
   // Typing appends or trims tiles so an existing joker survives; any other edit is re-read as plain round letters.
   function typeWord(value: string, round: WordRound) { const next = Array.from(normalize(value).replace(/[^A-ZÇĞİÖŞÜ]/gu, "")); const current = tiles.map((tile) => tile.letter); let candidate: Tile[]; if (next.length >= current.length && current.every((letter, index) => next[index] === letter)) candidate = [...tiles, ...toTiles(next.slice(current.length))]; else if (next.length < current.length && next.every((letter, index) => current[index] === letter)) candidate = tiles.slice(0, next.length); else candidate = toTiles(next); if (canBuild(candidate, round)) setTiles(candidate); }
   // Every phone screen: the logo above one card.
-  const screen = (content: ReactNode) => <main className="app-shell flex min-h-screen flex-col items-center justify-center gap-5 p-5"><Logo className="w-44" />{content}</main>;
+  const screen = (content: ReactNode) => <main className="app-shell flex min-h-screen flex-col items-center justify-center gap-5 p-5"><div className="flex flex-col items-center"><Logo className="w-44" /><EventLogo className="h-9 w-auto" /></div>{content}</main>;
   const roundLabel = (kind: string) => <p className="eyebrow">{state.matchRound}. tur / {state.totalRounds} · {kind}</p>;
   const sent = <div className="py-10 text-center"><h2 className="font-serif text-3xl font-bold text-brand-green">Cevabınız alındı</h2><button className="btn btn-ghost mt-6" onClick={() => setSubmitted(false)}>Cevabı düzenle</button></div>;
   const errorLine = error && <p className="mt-3 text-center text-brand-orange">{error}</p>;
