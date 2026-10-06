@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `bir-kelime-bir-islem` is a Turkish real-time ice-breaker game ("Bir Kelime Bir İşlem"): a Vite/React/TypeScript client plus a stateless HTTP API meant for Vercel. The host/projector screen is `/host` (any non-`/join` path); participants join on phones at `/join`. All UI text is Turkish.
 
-**Migration status (branch `vercel-migration`).** Express and Socket.IO were replaced by an HTTP API that runs on Vercel (`fra1`) with Upstash Redis for state and Ably for change notifications (steps 3a–3c), plus host approval of joining teams (step 4). Locally the same API runs in-memory without any keys.
+The game runs on Vercel (`fra1`, production: https://bir-kelime-bir-islem-phi.vercel.app) with Upstash Redis for state and Ably for change notifications. It replaced an earlier Express + Socket.IO server (PR #1); host approval came in PR #2. Locally the same API runs in-memory without any keys.
 
-`AGENTS.md` and `DEV_NOTES.md` (in Turkish) predate the migration; see "Stale documentation" below.
+See "Other documentation" at the end for `AGENTS.md` and `DEV_NOTES.md`.
 
 ## Commands
 
@@ -80,7 +80,8 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 - Team names are trimmed and capped at 32 chars on the server; answers are capped at 64 chars; `add-time` accepts 1–600 seconds. Keep input validation on the server.
 - Config fields `teamMode`, `predefinedTeams`, and `themedWord` are serialized to clients, but gameplay doesn't use them yet (`themedWord` is only displayed on word-round results). Don't assume they do anything.
 
-## Stale documentation
+## Other documentation
 
-- `AGENTS.md` and `DEV_NOTES.md` still describe the Express + Socket.IO server (`server/index.ts`, socket events, `npm start`), host manual word approval and `data/turkish-words.json`. None of those exist anymore. `data/turkish-words.json` is gitignored and unused.
-- `DEV_NOTES.md` lists a hard-coded working directory from another machine. Ignore it.
+- `AGENTS.md` repeats these conventions for other coding agents. Keep it in sync when the architecture or the rules change.
+- `DEV_NOTES.md` (Turkish) records the implemented features, what has been verified and the backlog of remaining work.
+- `data/turkish-words.json` is a leftover from before the TDK lookup: it is gitignored and nothing reads it.
