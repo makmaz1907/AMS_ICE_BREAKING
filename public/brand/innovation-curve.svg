@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMaxYMax slice" fill="none">
+  <!-- NTT DATA Innovation Curve, wireframe: one colour, curve stroke twice the grid stroke (2:1). -->
+  <g stroke="#19A3FC">
+    <g stroke-width="1.5" stroke-opacity="0.16">
+      <path d="M880 900V140M980 900V140M1080 900V140M1180 900V140M1280 900V140M1380 900V140M1480 900V140M1580 900V140" />
+      <path d="M880 140H1600M880 240H1600M880 340H1600M880 440H1600M880 540H1600M880 640H1600M880 740H1600M880 840H1600" />
+    </g>
+    <path stroke-width="3" stroke-opacity="0.55" d="M620 900C900 900 1010 760 1120 520C1230 280 1340 150 1600 140" />
+  </g>
+</svg>
