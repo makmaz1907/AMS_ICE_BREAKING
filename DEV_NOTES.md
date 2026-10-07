@@ -123,7 +123,7 @@ Kullanıcının daha önceki isteğine göre kalite/dokümantasyon maddeleri (y�
 3. ~~Logo bileşeni~~: yapıldı (NTT DATA logosu, LE AMS etkinlik logosu, "powered by aXet").
 4. `config/game.json` içindeki `themedWord` ayarının harf üretimine gerçekten uygulanması. Şu an yalnızca tur sonucunda metin olarak gösteriliyor.
 5. `predefinedTeams` ile telefonda takım seçimi.
-6. `teamMode: "individual"` davranışının gerçek oyun mantığına bağlanması.
+6. ~~Bireysel oyun~~: `teamMode: "individual"` ayarlandı; katılım formu "Adınız" diye soruyor, diğer metinler nötr ("katılımcı").
 7. ~~Ses efektleri~~: yapıldı. Host ekranında tur başı melodisi, son 30/10/5 saniyede sıklaşan tıkırtılar, tur bitişinde yumuşak bir çan akoru ve final açıklamasında davul ile fanfar var; alt şeritteki "Ses açık/kapalı" düğmesiyle kapatılabilir. Puan tablosu da host ayarıyla son iki turda ya da tüm oyun boyunca gizlenebiliyor; final sıralaması sondan başa açıklanıyor.
 8. ~~Animasyonlu skor sırası~~: yapıldı (satırlar kayarak yer değiştirir, yeni puanın yanında "+N" balonu). Konfeti/podyum görseli de yenilendi.
 9. Host'un tur sonucu ekranında en iyi kelimenin/cevabın daha belirgin vurgulanması.

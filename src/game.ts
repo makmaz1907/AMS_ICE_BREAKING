@@ -35,10 +35,11 @@ export function useGame(host?: { token: string | null; onUnauthorized: () => voi
     return fetch(version === undefined ? "/api/state" : `/api/state?v=${version}`, { cache: "no-store" }).then((response) => response.json() as Promise<GameState>).then((next) => apply(next, version === undefined)).catch(() => undefined);
   }, [apply, hostToken]);
   useEffect(() => {
-    const unsubscribe = subscribe((version) => { if (version > latest.current) refresh(version); }, (connected) => { setOnline(connected); if (connected) refresh(); });
+    // Phones skip host-only changes (a new answer's points, a new participant): with many players that saves a state fetch per phone per answer.
+    const unsubscribe = subscribe((version, scope) => { if (scope === "host" && !hostToken) return; if (version > latest.current) refresh(version); }, (connected) => { setOnline(connected); if (connected) refresh(); });
     refresh();
     return unsubscribe;
-  }, [refresh]);
+  }, [refresh, hostToken]);
   // Polling is only a safety net for missed notifications: rare while connected, frequent while not.
   useEffect(() => {
     const poll = window.setInterval(() => refresh(), online ? 60_000 : 5_000);

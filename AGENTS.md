@@ -52,13 +52,14 @@ There are no test or lint scripts. Use `npm run build` as the validation command
 - `rounds`: entries with `type` (`word` or `number`) and `durationSeconds`.
 - `targetNumber`: optional number-round target, used only if it is within 100–999.
 - `targetDescription`: text shown with a number round.
-- `teamMode`, `predefinedTeams`, `themedWord`: sent to the client, but gameplay doesn't use them yet (`themedWord` is only shown on word-round results).
+- `teamMode`: `individual` (current) or `team`; it only changes the join form's wording, so keep other texts neutral ("katılımcı", "ad").
+- `predefinedTeams`, `themedWord`: sent to the client, but gameplay doesn't use them yet (`themedWord` is only shown on word-round results).
 
 ## Server and API conventions
 
 - State is never kept in function memory on Vercel: every request reads Redis. Every `Store` method must be atomic on its own.
 - Change the game meta only through `mutate()` in the engine (compare-and-set on `rev`, retried). Never write it directly.
-- Each change bumps a global version and publishes only that number. Clients refetch `GET /api/state?v=<version>`, which the CDN may cache; host-only data goes through `GET /api/host-state`, which is never cached.
+- Each change bumps a global version and publishes only that number and a scope: `host` (only the host screen shows it: joins, answers) or `all`. Phones ignore `host` changes, which keeps a 50-player game to one state fetch per answer. Clients refetch `GET /api/state?v=<version>`, which the CDN may cache; host-only data goes through `GET /api/host-state`, which is never cached.
 - There are no server timers. A round is closed by whoever notices first that its time has run out (`/api/tick`, `/api/state`, or the clients' countdowns); the compare-and-set lets only one caller win.
 - A submission is re-checked against the current round inside `store.addSubmission()` (same round, open, not paused, before the deadline) after the TDK lookup. Keep that check inside the store operation.
 - Add new routes to `server/api.ts`, never as new files under `api/` (Vercel Hobby allows 12 functions). Route names must be a single path segment, such as `host-login`, because nested paths never reach the catch-all function.

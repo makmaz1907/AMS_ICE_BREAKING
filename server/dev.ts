@@ -15,7 +15,7 @@ function lanAddress() {
 function events(response: http.ServerResponse) {
   response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
   response.write(": connected\n\n");
-  const send = (version: number) => response.write(`data: ${JSON.stringify({ version })}\n\n`);
+  const send = (change: { version: number; scope: string }) => response.write(`data: ${JSON.stringify(change)}\n\n`);
   const heartbeat = setInterval(() => response.write(": ping\n\n"), 25_000);
   changes.on("version", send);
   response.on("close", () => { clearInterval(heartbeat); changes.off("version", send); });

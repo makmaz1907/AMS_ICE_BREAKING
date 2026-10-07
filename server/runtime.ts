@@ -15,10 +15,10 @@ changes.setMaxListeners(0);
 
 const store = redisConfigured() ? createRedisStore(process.env.BKB_KEY_PREFIX ?? `bkb:${environment}:`) : createMemoryStore();
 const engine = createEngine(store, {
-  publish: async (version) => {
-    changes.emit("version", version);
+  publish: async (version, scope) => {
+    changes.emit("version", { version, scope });
     // A lost notification only delays clients until their next poll, so it must not fail the request.
-    if (ablyConfigured()) await publishVersion(channel, version).catch((error) => console.error("Ably yayını başarısız:", error));
+    if (ablyConfigured()) await publishVersion(channel, version, scope).catch((error) => console.error("Ably yayını başarısız:", error));
   },
 });
 

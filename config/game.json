@@ -6,7 +6,7 @@
     { "type": "number", "durationSeconds": 90 },
     { "type": "word", "durationSeconds": 60 }
   ],
-  "teamMode": "team",
+  "teamMode": "individual",
   "predefinedTeams": [],
   "themedWord": "",
   "targetNumber": null,

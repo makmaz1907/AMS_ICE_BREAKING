@@ -26,7 +26,7 @@ const routes: Record<string, Route> = {
   "GET results.json": async ({ engine }) => json(await engine.results()),
   "GET results.csv": async ({ engine }) => {
     const { teams } = await engine.results();
-    const rows = ["Sıra,Takım,Puan", ...teams.map((team, index) => `${index + 1},"${team.name.replaceAll('"', '""')}",${team.score}`)];
+    const rows = ["Sıra,Ad,Puan", ...teams.map((team, index) => `${index + 1},"${team.name.replaceAll('"', '""')}",${team.score}`)];
     return new Response(`﻿${rows.join("\n")}`, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="bir-kelime-bir-islem-sonuclari.csv"', "Cache-Control": "no-store" } });
   },
 };

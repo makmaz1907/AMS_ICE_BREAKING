@@ -8,7 +8,10 @@ import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wo
 
 type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
-export type Notifier = { publish(version: number): Promise<void> };
+// "host": the change only shows on the host screen (a new answer's points, a new or pending participant). Phones ignore those, so
+// with ~50 players an answer costs one state fetch (the host's) instead of fifty. "all": everything else (phases, results, approvals).
+export type ChangeScope = "all" | "host";
+export type Notifier = { publish(version: number, scope: ChangeScope): Promise<void> };
 export type Result = { ok: boolean; message?: string };
 export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval" | "live-result" | "scoreboard";
 type Body = Record<string, unknown>;
@@ -26,10 +29,10 @@ const fail = (message: string) => ({ ok: false, message });
 const sameName = (left: string, right: string) => left.toLocaleUpperCase("tr-TR") === right.toLocaleUpperCase("tr-TR");
 // Which host action moves a team from which statuses to which.
 const teamTransitions: Record<string, { from: TeamStatus[]; to: TeamStatus }> = { approve: { from: ["pending", "rejected"], to: "approved" }, reject: { from: ["pending"], to: "rejected" }, remove: { from: ["approved", "pending"], to: "removed" } };
-const refusal: Record<TeamStatus, string> = { pending: "Takımınız henüz host tarafından onaylanmadı.", approved: "", rejected: "Katılımınız reddedildi. Farklı bir adla tekrar deneyebilirsiniz.", removed: "Oyundan çıkarıldınız. Farklı bir adla tekrar katılabilirsiniz." };
+const refusal: Record<TeamStatus, string> = { pending: "Katılımınız henüz host tarafından onaylanmadı.", approved: "", rejected: "Katılımınız reddedildi. Farklı bir adla tekrar deneyebilirsiniz.", removed: "Oyundan çıkarıldınız. Farklı bir adla tekrar katılabilirsiniz." };
 
 export function createEngine(store: Store, notifier: Notifier) {
-  async function changed() { await notifier.publish(await store.bumpVersion()); }
+  async function changed(scope: ChangeScope = "all") { await notifier.publish(await store.bumpVersion(), scope); }
   // Optimistic update of the game meta: retried when another request changed it in between, so concurrent host commands and ticks never overwrite each other.
   async function mutate(change: (meta: Meta) => Meta | null) {
     for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -122,7 +125,7 @@ export function createEngine(store: Store, notifier: Notifier) {
   async function roundSubmissions(meta: Meta, teams: Array<{ id: string; name: string }>) {
     if (!meta.round) return [];
     const names = new Map(teams.map((team) => [team.id, team.name]));
-    return (await store.listSubmissions(meta.round.id)).filter((submission) => names.has(submission.teamId)).map((submission) => ({ ...submission, teamName: names.get(submission.teamId) ?? "Bilinmeyen takım" })).sort((left, right) => right.score - left.score || left.teamName.localeCompare(right.teamName, "tr-TR"));
+    return (await store.listSubmissions(meta.round.id)).filter((submission) => names.has(submission.teamId)).map((submission) => ({ ...submission, teamName: names.get(submission.teamId) ?? "Bilinmeyen katılımcı" })).sort((left, right) => right.score - left.score || left.teamName.localeCompare(right.teamName, "tr-TR"));
   }
   function serializeRound(meta: Meta) {
     const round = meta.round;
@@ -195,7 +198,7 @@ export function createEngine(store: Store, notifier: Notifier) {
         const { from, to } = teamTransitions[action];
         const meta = await store.readMeta();
         const team = typeof body.teamId === "string" ? await store.getTeam(meta.gameId, body.teamId) : null;
-        if (!team || !from.includes(statusOf(team))) return fail("Bu takım için bu işlem yapılamaz.");
+        if (!team || !from.includes(statusOf(team))) return fail("Bu katılımcı için bu işlem yapılamaz.");
         await store.saveTeam(meta.gameId, { ...team, status: to });
         await changed();
         return { ok: true };
@@ -210,7 +213,7 @@ export function createEngine(store: Store, notifier: Notifier) {
     // rejoinOnly: an automatic rejoin (page load, reconnect, game reset seen by an open page). It may only resume a team of the current game; it never creates one.
     async join(rawName: unknown, token: unknown, rejoinOnly = false) {
       const name = typeof rawName === "string" ? rawName.trim().slice(0, 32) : "";
-      if (!name) return fail("Geçerli bir takım adı girin.");
+      if (!name) return fail("Geçerli bir ad girin.");
       const meta = await store.readMeta();
       const claim = readTeamToken(token);
       // A token from before "Oyunu sıfırla" belongs to a game that no longer exists, so the team joins as a new team.
@@ -226,7 +229,8 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (rejoinOnly) return { ok: false, expired: true, message: "" };
       const team: TeamRecord = { id: crypto.randomUUID(), name, status: approvalOn(meta) ? "pending" : "approved", joinedAt: Date.now() };
       await store.saveTeam(meta.gameId, team);
-      await changed();
+      // Only the host lists participants; the joining phone already knows its own status from this response.
+      await changed("host");
       return { ok: true, gameId: meta.gameId, teamId: team.id, token: teamToken(meta.gameId, team.id), name, teamStatus: team.status };
     },
     async submit(token: unknown, answer: unknown, rawJokerIndex: unknown): Promise<Result> {
@@ -247,7 +251,8 @@ export function createEngine(store: Store, notifier: Notifier) {
       const result = await store.addSubmission(meta, round.id, item);
       if (result === "closed") return fail(closedMessage);
       if (result === "duplicate") return fail("Bu cevabı zaten gönderdiniz.");
-      await changed();
+      // During a round only the host's scoreboard changes; phones get the results when the round closes.
+      await changed("host");
       return { ok: true, message: "letters" in round ? "Cevabınız alındı." : "Cevabınız alındı. Puanlar tur sonunda verilecek." };
     },
     async hostLogin(pin: unknown, client: string) {
