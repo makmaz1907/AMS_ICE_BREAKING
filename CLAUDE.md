@@ -83,7 +83,7 @@ Server modules are native ESM and import siblings with a `.js` suffix (`./engine
 ## Domain rules to preserve
 
 - Normalize Turkish text with `toLocaleUpperCase("tr-TR")` / `toLocaleLowerCase("tr-TR")`, never default casing (i/İ/ı/I matter). Sort names with `localeCompare(..., "tr-TR")`.
-- Word round: 8 distinct letters (exactly 3 weighted vowels + 5 weighted consonants, shuffled) + 1 joker. Score = letter count, +5 for a 9-letter word without the joker.
+- Word round: 8 distinct letters (exactly 3 weighted vowels + 5 weighted consonants, shuffled) + 1 joker. Score = letter count, +5 for a 9-letter word without the joker. When the round closes, `awardLongestWord()` gives +5 once per team to the round's longest accepted word (ties all get it); the bonus is folded into that submission's score and flagged `longest`. Rounds alternate word/number (`config/game.json`: W, N, W, N, W).
 - Team names are trimmed and capped at 32 chars on the server; answers are capped at 64 chars; `add-time` accepts 1–600 seconds. Keep input validation on the server.
 - Config fields `teamMode`, `predefinedTeams`, and `themedWord` are serialized to clients, but gameplay doesn't use them yet (`themedWord` is only displayed on word-round results). Don't assume they do anything.
 

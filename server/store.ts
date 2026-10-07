@@ -11,7 +11,8 @@ export type ScoreboardMode = "open" | "freeze" | "hidden";
 export type TeamStatus = "pending" | "approved" | "rejected" | "removed";
 // status and joinedAt are missing on teams created before host approval existed; statusOf() treats those teams as approved.
 export type TeamRecord = { id: string; name: string; status?: TeamStatus; joinedAt?: number };
-export type Submission = { teamId: string; answer: string; value?: number; dictionaryValid?: boolean; meanings?: string[]; buildValid: boolean; jokerUsed?: boolean; status: "accepted" | "rejected"; score: number };
+// longest: this answer earned the round's longest-word bonus (word rounds).
+export type Submission = { longest?: boolean; teamId: string; answer: string; value?: number; dictionaryValid?: boolean; meanings?: string[]; buildValid: boolean; jokerUsed?: boolean; status: "accepted" | "rejected"; score: number };
 export type SubmitResult = "ok" | "duplicate" | "closed";
 
 // All game data lives behind this interface: MemoryStore locally, RedisStore on Vercel. Every method must be atomic on its own.
@@ -29,7 +30,8 @@ export interface Store {
   // Re-checks against the stored meta that the round is still open, rejects a repeated answer, records it and adds its score, all in one step.
   // meta must be the snapshot the round was read from: its gameId and series pick the score table.
   addSubmission(meta: Pick<Meta, "gameId" | "series">, roundId: string, submission: Submission): Promise<SubmitResult>;
-  // Number rounds only: records each team's points on its best submission and adds them to the score table, in one step.
+  // Points given when a round closes (number-round ranking, longest-word bonus): stores each submission as given, with its final score,
+  // and adds `points` to its team's total, all in one step.
   awardScores(owner: Pick<Meta, "gameId" | "series">, roundId: string, awards: Array<{ submission: Submission; points: number }>): Promise<void>;
   getCache(key: string): Promise<string | null>;
   setCache(key: string, value: string, ttlSeconds: number): Promise<void>;
@@ -79,7 +81,7 @@ export function createMemoryStore(): Store {
     async awardScores(owner, roundId, awards) {
       const round = tableFor(submissions, roundId);
       const table = tableFor(scores, `${owner.gameId}:${owner.series}`);
-      for (const { submission, points } of awards) { round.set(submissionKey(submission), { ...structuredClone(submission), score: points }); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + points); }
+      for (const { submission, points } of awards) { round.set(submissionKey(submission), structuredClone(submission)); table.set(submission.teamId, (table.get(submission.teamId) ?? 0) + points); }
     },
     async getCache(key) { const entry = cache.get(key); return entry && entry.expiresAt > Date.now() ? entry.value : null; },
     async setCache(key, value, ttlSeconds) { cache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 }); },

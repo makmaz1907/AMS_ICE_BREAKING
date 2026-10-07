@@ -1,10 +1,10 @@
 {
   "rounds": [
     { "type": "word", "durationSeconds": 60 },
-    { "type": "word", "durationSeconds": 60 },
+    { "type": "number", "durationSeconds": 90 },
     { "type": "word", "durationSeconds": 60 },
     { "type": "number", "durationSeconds": 90 },
-    { "type": "number", "durationSeconds": 90 }
+    { "type": "word", "durationSeconds": 60 }
   ],
   "teamMode": "team",
   "predefinedTeams": [],

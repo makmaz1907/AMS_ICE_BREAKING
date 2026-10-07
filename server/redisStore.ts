@@ -74,7 +74,7 @@ export function createRedisStore(prefix: string): Store {
     },
     async awardScores(owner, roundId, awards) {
       if (!awards.length) return;
-      await redis.eval(awardScores, [key("subs", roundId), key("scores", owner.gameId, owner.series)], [String(dataTtl), ...awards.flatMap(({ submission, points }) => [submissionKey(submission), JSON.stringify({ ...submission, score: points }), submission.teamId, String(points)])]);
+      await redis.eval(awardScores, [key("subs", roundId), key("scores", owner.gameId, owner.series)], [String(dataTtl), ...awards.flatMap(({ submission, points }) => [submissionKey(submission), JSON.stringify(submission), submission.teamId, String(points)])]);
     },
     async getCache(cacheKey) { return redis.get<string>(key("cache", cacheKey)); },
     async setCache(cacheKey, value, ttlSeconds) { await redis.set(key("cache", cacheKey), value, { ex: ttlSeconds }); },

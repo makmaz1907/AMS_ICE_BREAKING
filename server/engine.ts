@@ -15,9 +15,12 @@ type Body = Record<string, unknown>;
 export type Engine = ReturnType<typeof createEngine>;
 type PublicState = Record<string, unknown> & { version: number };
 
-const defaults: GameConfig = { rounds: [{ type: "word", durationSeconds: 60 }, { type: "word", durationSeconds: 60 }, { type: "word", durationSeconds: 60 }, { type: "number", durationSeconds: 90 }, { type: "number", durationSeconds: 90 }], teamMode: "team", predefinedTeams: [], themedWord: "", targetNumber: null, targetDescription: "" };
+// Word and number rounds alternate: Bir Kelime, Bir İşlem, …
+const defaults: GameConfig = { rounds: [{ type: "word", durationSeconds: 60 }, { type: "number", durationSeconds: 90 }, { type: "word", durationSeconds: 60 }, { type: "number", durationSeconds: 90 }, { type: "word", durationSeconds: 60 }], teamMode: "team", predefinedTeams: [], themedWord: "", targetNumber: null, targetDescription: "" };
 const parsed = rawConfig as Partial<GameConfig>;
 const config: GameConfig = { ...defaults, ...parsed, rounds: parsed.rounds?.length ? parsed.rounds : defaults.rounds };
+// Extra points, once per team, for the round's longest accepted word (ties all get it).
+const longestWordBonus = 5;
 const closedMessage = "Bu tur için cevap kabul edilmiyor.";
 const fail = (message: string) => ({ ok: false, message });
 const sameName = (left: string, right: string) => left.toLocaleUpperCase("tr-TR") === right.toLocaleUpperCase("tr-TR");
@@ -44,7 +47,20 @@ export function createEngine(store: Store, notifier: Notifier) {
   async function close(change: (meta: Meta) => Meta | null) {
     const next = await mutate(change);
     if (next?.round && "numbers" in next.round) await awardNumberRound(next, next.round);
+    if (next?.round && "letters" in next.round) await awardLongestWord(next, next.round.id);
     return next;
+  }
+  async function approvedTeamIds(meta: Meta) { return new Set((await store.listTeams(meta.gameId)).filter((team) => statusOf(team) === "approved").map((team) => team.id)); }
+  async function awardLongestWord(meta: Meta, roundId: string) {
+    const [submissions, approved] = await Promise.all([store.listSubmissions(roundId), approvedTeamIds(meta)]);
+    const accepted = submissions.filter((submission) => submission.status === "accepted" && approved.has(submission.teamId));
+    if (!accepted.length) return;
+    const length = (submission: Submission) => Array.from(submission.answer).length;
+    const longest = Math.max(...accepted.map(length));
+    const winners = new Map<string, Submission>();
+    for (const submission of accepted) if (length(submission) === longest && !winners.has(submission.teamId)) winners.set(submission.teamId, submission);
+    await store.awardScores(meta, roundId, [...winners.values()].map((submission) => ({ submission: { ...submission, score: submission.score + longestWordBonus, longest: true }, points: longestWordBonus })));
+    await changed();
   }
   async function awardNumberRound(meta: Meta, round: NumberRound) {
     const [submissions, teams] = await Promise.all([store.listSubmissions(round.id), store.listTeams(meta.gameId)]);
@@ -57,7 +73,7 @@ export function createEngine(store: Store, notifier: Notifier) {
     }
     const points = scoreNumberRound([...best.values()].map((submission) => ({ teamId: submission.teamId, value: submission.value! })), round.target);
     if (!best.size) return;
-    await store.awardScores(meta, round.id, [...best.values()].map((submission) => ({ submission, points: points.get(submission.teamId) ?? 0 })));
+    await store.awardScores(meta, round.id, [...best.values()].map((submission) => ({ submission: { ...submission, score: points.get(submission.teamId) ?? 0 }, points: points.get(submission.teamId) ?? 0 })));
     await changed();
   }
 

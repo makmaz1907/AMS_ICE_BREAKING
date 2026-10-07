@@ -36,8 +36,9 @@
 ### Oyun akışı
 
 - Oyun planı `config/game.json` dosyasından okunur. Varsayılan sıra:
-  - 3 kelime turu × 60 saniye
-  - 2 işlem turu × 90 saniye
+  - Kelime ve işlem turları dönüşümlü: Kelime, İşlem, Kelime, İşlem, Kelime
+  - Kelime turları 60 saniye, işlem turları 90 saniye
+- Oyun ekranlarında küçük bir "Katıl / yeniden bağlan" QR kartı var; bağlantısı kopan telefon okutup takımına geri döner.
 - Host kontrolleri:
   - Tur başlat / bitir
   - Süreyi durdur / devam ettir
@@ -59,6 +60,7 @@
   - TDK anlamları, host'un tur sonucu ekranında gösterilir.
 - Takım bir turda birden fazla farklı kelime gönderebilir; her kabul edilen kelime puan getirir. Aynı kelime ikinci kez kabul edilmez.
 - Puan: harf sayısı. Jokersiz 9 harfli kelimeye +5 bonus.
+- Tur kapanınca o turun en uzun kelimesini bulan takım +5 bonus alır (eşitlikte hepsi alır, takım başına bir kez).
 
 ### İşlem turu
 
