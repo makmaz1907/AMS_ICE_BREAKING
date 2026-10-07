@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import rawConfig from "../config/game.json" with { type: "json" };
 import { hostPin, hostToken, pinMatches, readTeamToken, teamToken } from "./auth.js";
 import { createNumberRound, evaluateNumberExpression, scoreNumberRound, type NumberRound } from "./numberGame.js";
-import { approvalOn, initialMeta, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
+import { approvalOn, initialMeta, liveResultOn, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
 import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wordGame.js";
 
@@ -10,7 +10,7 @@ type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
 export type Notifier = { publish(version: number): Promise<void> };
 export type Result = { ok: boolean; message?: string };
-export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval";
+export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval" | "live-result";
 type Body = Record<string, unknown>;
 export type Engine = ReturnType<typeof createEngine>;
 type PublicState = Record<string, unknown> & { version: number };
@@ -79,11 +79,12 @@ export function createEngine(store: Store, notifier: Notifier) {
       if (!isActive(meta) || !meta.round || !(seconds > 0 && seconds <= 600)) return null;
       return meta.pausedRemainingMs !== null ? { ...meta, pausedRemainingMs: meta.pausedRemainingMs + seconds * 1000 } : { ...meta, round: { ...meta.round, endsAt: meta.round.endsAt + seconds * 1000 } };
     },
-    // The host's approval setting survives a reset; everything else starts over.
-    reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta) }),
+    // The host's settings survive a reset; everything else starts over.
+    reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta) }),
     // Back to the lobby (QR screen) from any phase, keeping the teams: a new series starts so scores begin at zero.
     lobby: (meta) => meta.phase === "lobby" ? null : { ...meta, series: meta.series + 1, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null },
     approval: (meta, body) => typeof body.enabled === "boolean" && body.enabled !== approvalOn(meta) ? { ...meta, approvalRequired: body.enabled } : null,
+    "live-result": (meta, body) => typeof body.enabled === "boolean" && body.enabled !== liveResultOn(meta) ? { ...meta, liveResult: body.enabled } : null,
   };
 
   // Only approved teams play: they alone appear in the scoreboard, the results and the exports.
@@ -121,7 +122,7 @@ export function createEngine(store: Store, notifier: Notifier) {
       themedWord: meta.phase === "round-results" && roundType === "word" ? config.themedWord || null : null,
       paused: meta.pausedRemainingMs !== null, remainingMs: meta.pausedRemainingMs,
       // Phones learn their own approval status from here; names of teams that aren't approved are only in hostState().
-      approvalRequired: approvalOn(meta), statuses: Object.fromEntries(all.filter((team) => statusOf(team) !== "approved").map((team) => [team.id, statusOf(team)])),
+      approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta), statuses: Object.fromEntries(all.filter((team) => statusOf(team) !== "approved").map((team) => [team.id, statusOf(team)])),
     };
   }
   async function approveAll(meta: Meta) {

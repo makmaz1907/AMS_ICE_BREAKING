@@ -28,3 +28,29 @@ export function EventLogo({ className = "", compact = false }: { className?: str
     </>}
   </svg>;
 }
+
+// "powered by aXet", redrawn as a vector for dark backgrounds: the original is a small screenshot with dark letters on a light card.
+// a/e/t are white geometric strokes; the tall X keeps its blue gradient and still overshoots the x-height above and below.
+export function PoweredBy({ className = "" }: { className?: string }) {
+  return <svg aria-label="powered by aXet" className={className} role="img" viewBox="0 0 330 80">
+    <defs>
+      <linearGradient gradientUnits="userSpaceOnUse" id="axet-x" x1="0" x2="0" y1="4" y2="76"><stop offset="0" stopColor="#19A3FC" /><stop offset="1" stopColor="#0072BC" /></linearGradient>
+    </defs>
+    <text fill="#00DFED" fillOpacity="0.8" fontFamily="'Noto Sans', Arial, sans-serif" fontSize="17" fontWeight="700" letterSpacing="3.2" x="0" y="46">POWERED BY</text>
+    <line stroke="#FFFFFF" strokeOpacity="0.25" strokeWidth="1.5" x1="160" x2="160" y1="16" y2="64" />
+    <g transform="translate(176 0)">
+      {/* a */}
+      <circle cx="20" cy="40" fill="none" r="14.5" stroke="#FFFFFF" strokeWidth="11" />
+      <rect fill="#FFFFFF" height="40" width="11" x="29.5" y="20" />
+      {/* X: the stroke from the top right rises above the x-height, the other drops below the baseline */}
+      <path d="M46 20 L77 75" stroke="url(#axet-x)" strokeWidth="12" />
+      <path d="M79 4 L48 60" stroke="url(#axet-x)" strokeWidth="12" />
+      {/* e: a ring open at the lower right, with its bar */}
+      <circle cx="104" cy="40" fill="none" r="14.5" stroke="#FFFFFF" strokeDasharray="0 12.7 78.4" strokeWidth="11" />
+      <rect fill="#FFFFFF" height="8" width="40" x="84" y="36" />
+      {/* t */}
+      <rect fill="#FFFFFF" height="54" width="11" x="134" y="6" />
+      <rect fill="#FFFFFF" height="9" width="25" x="127" y="20" />
+    </g>
+  </svg>;
+}

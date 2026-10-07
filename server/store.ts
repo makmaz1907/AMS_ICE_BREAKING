@@ -4,8 +4,8 @@ import type { WordRound } from "./wordGame.js";
 
 export type GamePhase = "lobby" | "word" | "number" | "round-results" | "game-results";
 // gameId changes on "Oyunu sıfırla" (invalidating team tokens); series changes on "Yeni oyun" (fresh scores, same teams).
-// approvalRequired is missing on games created before host approval existed; approvalOn() treats that as on.
-export type Meta = { gameId: string; series: number; rev: number; phase: GamePhase; matchRound: number; round: WordRound | NumberRound | null; pausedRemainingMs: number | null; approvalRequired?: boolean };
+// approvalRequired and liveResult are missing on games created before those settings existed; approvalOn() and liveResultOn() treat that as on.
+export type Meta = { gameId: string; series: number; rev: number; phase: GamePhase; matchRound: number; round: WordRound | NumberRound | null; pausedRemainingMs: number | null; approvalRequired?: boolean; liveResult?: boolean };
 export type TeamStatus = "pending" | "approved" | "rejected" | "removed";
 // status and joinedAt are missing on teams created before host approval existed; statusOf() treats those teams as approved.
 export type TeamRecord = { id: string; name: string; status?: TeamStatus; joinedAt?: number };
@@ -35,7 +35,9 @@ export interface Store {
   hit(key: string, windowSeconds: number): Promise<number>;
 }
 
-export function initialMeta(): Meta { return { gameId: crypto.randomUUID(), series: 0, rev: 0, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null, approvalRequired: true }; }
+export function initialMeta(): Meta { return { gameId: crypto.randomUUID(), series: 0, rev: 0, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null, approvalRequired: true, liveResult: true }; }
+// Whether phones show the value of the expression being typed in a number round.
+export function liveResultOn(meta: Meta) { return meta.liveResult !== false; }
 export function approvalOn(meta: Meta) { return meta.approvalRequired !== false; }
 export function statusOf(team: TeamRecord): TeamStatus { return team.status ?? "approved"; }
 export function isActive(meta: Meta) { return meta.phase === "word" || meta.phase === "number"; }

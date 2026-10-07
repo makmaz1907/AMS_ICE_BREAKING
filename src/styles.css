@@ -111,6 +111,33 @@ button:focus-visible, input:focus-visible {
   outline-offset: 3px;
 }
 
+/* Scoreboard: a score that just went up pops, and a "+N" bubble rises from it and fades. */
+.score-pop { animation: score-pop 600ms cubic-bezier(.2, .9, .3, 1.4); }
+@keyframes score-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.45); color: #FFC400; }
+  100% { transform: scale(1); }
+}
+.score-gain {
+  position: absolute;
+  right: 0.75rem;
+  top: -0.4rem;
+  border-radius: 9999px;
+  background: #FFC400;
+  color: #070F26;
+  padding: 0.05rem 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  pointer-events: none;
+  animation: score-gain 2.4s ease-out forwards;
+}
+@keyframes score-gain {
+  0% { opacity: 0; transform: translateY(8px) scale(0.8); }
+  15% { opacity: 1; transform: translateY(-6px) scale(1.05); }
+  70% { opacity: 1; transform: translateY(-14px); }
+  100% { opacity: 0; transform: translateY(-26px); }
+}
+
 /* Winner screen: falling confetti in brand accent colours. */
 .confetti { position: relative; overflow: hidden; }
 .confetti > * { position: relative; z-index: 1; }
@@ -137,5 +164,5 @@ button:focus-visible, input:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tile-pop, .confetti::before, .confetti::after { animation: none; }
+  .tile-pop, .confetti::before, .confetti::after, .score-pop, .score-gain { animation: none; }
 }

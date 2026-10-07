@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { subscribe } from "./realtime";
 import type { ApiResult, GameState } from "./types";
 
-export const emptyState: GameState = { gameId: "", version: -1, serverNow: 0, phase: "lobby", teams: [], round: null, submissions: [], matchRound: 0, totalRounds: 0, roundType: null, teamMode: "team", winner: null, numberSolution: null, themedWord: null, paused: false, remainingMs: null, approvalRequired: true, statuses: {} };
+export const emptyState: GameState = { gameId: "", version: -1, serverNow: 0, phase: "lobby", teams: [], round: null, submissions: [], matchRound: 0, totalRounds: 0, roundType: null, teamMode: "team", winner: null, numberSolution: null, themedWord: null, paused: false, remainingMs: null, approvalRequired: true, liveResult: true, statuses: {} };
 
 export async function post<T extends object = ApiResult>(path: string, body: object = {}, token?: string | null): Promise<T & ApiResult> {
   try {

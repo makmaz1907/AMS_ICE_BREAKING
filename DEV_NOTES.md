@@ -118,14 +118,14 @@ Kullanıcının daha önceki isteğine göre kalite/dokümantasyon maddeleri (y�
 
 1. Production'da gerçek telefonlarla tam bir oyun denemesi.
 2. GitHub deposunu Vercel'e bağlamak, böylece `main`'e gönderilen kod kendiliğinden yayına çıksın.
-3. Logo bileşeni: `public/assets/logo.svg` varsa logoyu, yoksa kurumsal metni gösteren bir bileşen. Henüz `public/` klasörü yok.
+3. ~~Logo bileşeni~~: yapıldı (NTT DATA logosu, LE AMS etkinlik logosu, "powered by aXet").
 4. `config/game.json` içindeki `themedWord` ayarının harf üretimine gerçekten uygulanması. Şu an yalnızca tur sonucunda metin olarak gösteriliyor.
 5. `predefinedTeams` ile telefonda takım seçimi.
 6. `teamMode: "individual"` davranışının gerçek oyun mantığına bağlanması.
 7. Ses efektleri ve bunları açıp kapatma seçeneği.
-8. Animasyonlu skor sırası ve daha güçlü konfeti/podyum görseli.
+8. ~~Animasyonlu skor sırası~~: yapıldı (satırlar kayarak yer değiştirir, yeni puanın yanında "+N" balonu). Konfeti/podyum görseli de yenilendi.
 9. Host'un tur sonucu ekranında en iyi kelimenin/cevabın daha belirgin vurgulanması.
-10. İşlem turunda telefonda ara sonucun anlık hesaplanması.
+10. ~~İşlem turunda telefonda ara sonuç~~: yapıldı; host lobideki "Oyun ayarları"ndan ya da işlem turu sırasında açıp kapatabilir.
 
 ## Dikkat
 

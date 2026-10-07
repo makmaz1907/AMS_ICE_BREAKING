@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import { evaluateNumberExpression } from "./numberExpression.js";
+
+// The parser lives in its own file (no Node imports) so the phone can show live intermediate results with the same rules.
+export { evaluateNumberExpression };
 
 export type NumberRound = {
   id: string;
@@ -53,62 +57,6 @@ export function solveNumbers(numbers: number[], target: number) {
   return (best as Node | null)?.expression ?? null;
 }
 
-export function evaluateNumberExpression(expression: string, availableNumbers: number[]) {
-  const tokens = expression.match(/\d+|[()+\-*/×÷]/g);
-  if (!tokens || tokens.join("") !== expression.replace(/\s/g, "").replace(/×/g, "×").replace(/÷/g, "÷")) return { valid: false, message: "Geçersiz ifade." };
-  let position = 0;
-  const used: number[] = [];
-  const consumeNumber = () => {
-    const value = Number(tokens[position]);
-    if (!Number.isInteger(value)) throw new Error("Sayı bekleniyor.");
-    const index = availableNumbers.findIndex((number, numberIndex) => number === value && !used.includes(numberIndex));
-    if (index < 0) throw new Error("Her sayı en fazla bir kez kullanılabilir.");
-    used.push(index);
-    position += 1;
-    return value;
-  };
-  const factor = (): number => {
-    if (tokens[position] === "(") {
-      position += 1;
-      const value = sum();
-      if (tokens[position] !== ")") throw new Error("Parantez kapanmadı.");
-      position += 1;
-      return value;
-    }
-    return consumeNumber();
-  };
-  const product = (): number => {
-    let value = factor();
-    while (["*", "/", "×", "÷"].includes(tokens[position])) {
-      const operation = tokens[position++];
-      const right = factor();
-      if (operation === "*" || operation === "×") value *= right;
-      else {
-        if (right === 0 || value % right !== 0) throw new Error("Bölme tam sayı olmalı.");
-        value /= right;
-      }
-      if (!Number.isInteger(value) || value <= 0) throw new Error("Ara sonuçlar pozitif tam sayı olmalı.");
-    }
-    return value;
-  };
-  const sum = (): number => {
-    let value = product();
-    while (["+", "-"].includes(tokens[position])) {
-      const operation = tokens[position++];
-      const right = product();
-      value = operation === "+" ? value + right : value - right;
-      if (!Number.isInteger(value) || value <= 0) throw new Error("Ara sonuçlar pozitif tam sayı olmalı.");
-    }
-    return value;
-  };
-  try {
-    const value = sum();
-    if (position !== tokens.length) throw new Error("Geçersiz ifade.");
-    return { valid: true, value, usedNumbers: used.length };
-  } catch (error) {
-    return { valid: false, message: error instanceof Error ? error.message : "Geçersiz ifade." };
-  }
-}
 
 // Scores a number round from each team's closest answer, once the round has closed.
 // If anyone hit the target exactly, they get 10 and everyone else 0. Otherwise teams are ranked by distance and get N, N-1, … 1,
