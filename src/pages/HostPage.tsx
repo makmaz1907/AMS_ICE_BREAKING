@@ -111,7 +111,7 @@ export function HostPage() {
   const { state, serverNow } = useGame({ token, onUnauthorized: () => { saveHostToken(null); setToken(null); setError("Host oturumunun süresi doldu. PIN'i yeniden girin."); } });
   const [joinUrl, setJoinUrl] = useState(`${window.location.origin}/join`);
   const remaining = useRemainingSeconds(state, serverNow);
-  // Round sounds on the projector: a start jingle, ticks that tighten as time runs out, and a horn when the round closes.
+  // Round sounds on the projector: a start jingle, ticks that tighten as time runs out, and a soft bell chord when the round closes.
   const roundTrack = useRef<{ phase: string; roundId?: string } | null>(null);
   useEffect(() => {
     if (state.version < 0) return;

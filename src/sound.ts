@@ -71,8 +71,11 @@ export const sounds = {
     if (level === 2) note(1200, 0, 0.06, { type: "square", volume: 0.12 });
     if (level === 3) { note(80, 0, 0.18, { volume: 0.5, glide: 50 }); note(80, 0.22, 0.16, { volume: 0.35, glide: 50 }); note(1500, 0, 0.07, { type: "square", volume: 0.14 }); }
   },
-  // Time's up: a low two-tone horn.
-  roundEnd() { note(392, 0, 0.5, { type: "sawtooth", volume: 0.18 }); note(261.63, 0.45, 0.9, { type: "sawtooth", volume: 0.2, glide: 220 }); },
+  // Round over: a soft bell chord (C–E–G, lightly strummed, long decay) with a faint sparkle on top. Calm and "done", not a losing buzzer.
+  roundEnd() {
+    [523.25, 659.25, 783.99].forEach((frequency, index) => note(frequency, index * 0.07, 1.6, { volume: 0.16 }));
+    note(1046.5, 0.21, 1.2, { volume: 0.06 });
+  },
   // Final results: a soft rising blip per revealed place, a drum roll before the winner, then a fanfare.
   reveal(place: number) { note(place <= 3 ? 660 : 440, 0, 0.25, { type: "triangle", volume: 0.22, glide: place <= 3 ? 880 : 550 }); },
   drumRoll(seconds: number) { for (let t = 0; t < seconds; t += 0.06) noise(t, 0.05, 0.05 + (t / seconds) * 0.18); },
