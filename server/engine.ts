@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import rawConfig from "../config/game.json" with { type: "json" };
 import { hostPin, hostToken, pinMatches, readTeamToken, teamToken } from "./auth.js";
 import { createNumberRound, evaluateNumberExpression, scoreNumberRound, type NumberRound } from "./numberGame.js";
-import { approvalOn, initialMeta, liveResultOn, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
+import { approvalOn, initialMeta, liveResultOn, scoreboardMode, isActive, isExpired, isRoundOpen, statusOf, type Meta, type Store, type Submission, type TeamRecord, type TeamStatus } from "./store.js";
 import { lookupTdk, type TdkLookup } from "./tdk.js";
 import { canBuildWord, createWordRound, normalizeTurkish, scoreWord } from "./wordGame.js";
 
@@ -10,7 +10,7 @@ type RoundConfig = { type: "word" | "number"; durationSeconds: number };
 type GameConfig = { rounds: RoundConfig[]; teamMode: "team" | "individual"; predefinedTeams: string[]; themedWord: string; targetNumber: number | null; targetDescription: string };
 export type Notifier = { publish(version: number): Promise<void> };
 export type Result = { ok: boolean; message?: string };
-export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval" | "live-result";
+export type HostAction = "start" | "finish" | "pause" | "add-time" | "reset" | "lobby" | "approval" | "live-result" | "scoreboard";
 type Body = Record<string, unknown>;
 export type Engine = ReturnType<typeof createEngine>;
 type PublicState = Record<string, unknown> & { version: number };
@@ -80,10 +80,11 @@ export function createEngine(store: Store, notifier: Notifier) {
       return meta.pausedRemainingMs !== null ? { ...meta, pausedRemainingMs: meta.pausedRemainingMs + seconds * 1000 } : { ...meta, round: { ...meta.round, endsAt: meta.round.endsAt + seconds * 1000 } };
     },
     // The host's settings survive a reset; everything else starts over.
-    reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta) }),
+    reset: (meta) => ({ ...initialMeta(), approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta), scoreboard: scoreboardMode(meta) }),
     // Back to the lobby (QR screen) from any phase, keeping the teams: a new series starts so scores begin at zero.
     lobby: (meta) => meta.phase === "lobby" ? null : { ...meta, series: meta.series + 1, phase: "lobby", matchRound: 0, round: null, pausedRemainingMs: null },
     approval: (meta, body) => typeof body.enabled === "boolean" && body.enabled !== approvalOn(meta) ? { ...meta, approvalRequired: body.enabled } : null,
+    scoreboard: (meta, body) => (body.mode === "open" || body.mode === "freeze" || body.mode === "hidden") && body.mode !== scoreboardMode(meta) ? { ...meta, scoreboard: body.mode } : null,
     "live-result": (meta, body) => typeof body.enabled === "boolean" && body.enabled !== liveResultOn(meta) ? { ...meta, liveResult: body.enabled } : null,
   };
 
@@ -91,6 +92,16 @@ export function createEngine(store: Store, notifier: Notifier) {
   async function rankedTeams(meta: Meta, teams?: TeamRecord[]) {
     const [all, scores] = await Promise.all([teams ?? store.listTeams(meta.gameId), store.scores(meta.gameId, meta.series)]);
     return all.filter((team) => statusOf(team) === "approved").map((team) => ({ id: team.id, name: team.name, score: scores[team.id] ?? 0 })).sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "tr-TR"));
+  }
+  // Totals are hidden from every screen (including the projector) until the final results, per the host's scoreboard setting.
+  function scoresHidden(meta: Meta) {
+    if (meta.phase === "game-results" || meta.matchRound === 0) return false;
+    const mode = scoreboardMode(meta);
+    return mode === "hidden" || (mode === "freeze" && meta.matchRound >= config.rounds.length - 1);
+  }
+  // While hidden, totals go out as 0 and teams in name order, so neither the numbers nor the ranking leak to phones or the network.
+  function publicTeams(meta: Meta, ranked: Array<{ id: string; name: string; score: number }>) {
+    return scoresHidden(meta) ? ranked.map((team) => ({ ...team, score: 0 })).sort((left, right) => left.name.localeCompare(right.name, "tr-TR")) : ranked;
   }
   async function roundSubmissions(meta: Meta, teams: Array<{ id: string; name: string }>) {
     if (!meta.round) return [];
@@ -111,7 +122,7 @@ export function createEngine(store: Store, notifier: Notifier) {
     const meta = await store.readMeta();
     if (isExpired(meta, Date.now())) { await tick(); return state(); }
     const all = await store.listTeams(meta.gameId);
-    const teams = await rankedTeams(meta, all);
+    const teams = publicTeams(meta, await rankedTeams(meta, all));
     const roundType = config.rounds[meta.matchRound - 1]?.type ?? null;
     const showResults = meta.phase === "round-results" || meta.phase === "game-results";
     return {
@@ -122,7 +133,7 @@ export function createEngine(store: Store, notifier: Notifier) {
       themedWord: meta.phase === "round-results" && roundType === "word" ? config.themedWord || null : null,
       paused: meta.pausedRemainingMs !== null, remainingMs: meta.pausedRemainingMs,
       // Phones learn their own approval status from here; names of teams that aren't approved are only in hostState().
-      approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta), statuses: Object.fromEntries(all.filter((team) => statusOf(team) !== "approved").map((team) => [team.id, statusOf(team)])),
+      approvalRequired: approvalOn(meta), liveResult: liveResultOn(meta), scoreboard: scoreboardMode(meta), scoresHidden: scoresHidden(meta), statuses: Object.fromEntries(all.filter((team) => statusOf(team) !== "approved").map((team) => [team.id, statusOf(team)])),
     };
   }
   async function approveAll(meta: Meta) {
@@ -230,7 +241,7 @@ export function createEngine(store: Store, notifier: Notifier) {
     },
     async results() {
       const meta = await store.readMeta();
-      const teams = await rankedTeams(meta);
+      const teams = publicTeams(meta, await rankedTeams(meta));
       return { teams, rounds: config.rounds.length, matchRound: meta.matchRound, submissions: await roundSubmissions(meta, teams) };
     },
   };

@@ -74,6 +74,7 @@ There are no test or lint scripts. Use `npm run build` as the validation command
 - Number expressions support `+`, `-`, `*`, `/`, `×`, `÷` and parentheses. Each number may be used at most once, division must be exact, and every intermediate result must be a positive integer. Never replace `evaluateNumberExpression()` with `eval`.
 - The number round's best solution (`solveNumbers()`) is shown only in round results.
 - `JoinPage.tsx` duplicates the letter-matching and joker rules so phones can't type words they can't build. Change both copies together.
+- Scoreboard visibility (`open` / `freeze` / `hidden`) is enforced on the server: while totals are hidden, the state and the exports must carry 0 for every total and list teams in name order. Never hide scores only in the UI.
 - Host approval: teams are `pending`, `approved`, `rejected` or `removed`. Only approved teams can submit or appear in the scoreboard, results and exports. The public state must never carry the names of teams that aren't approved. Automatic rejoins (`rejoin: true`) only resume a team of the current game and never create one, so a reset never sends old teams back to the host for approval. A rejoin never renames a team.
 
 ## Client conventions
