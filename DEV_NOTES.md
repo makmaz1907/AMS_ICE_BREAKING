@@ -58,6 +58,7 @@
   - Elle onay yoktur: TDK'da bulunmayan kelime reddedilir.
   - Önce oyuncunun yazdığı hâli sorulur, diğer I/İ, O/Ö, U/Ü, G/Ğ, C/Ç yazılışları 5'erli paralel gruplar hâlinde denenir (toplam 10 sn süre; Vercel'den TDK yanıtı zaman zaman 5 sn'yi aşıyor).
   - TDK'ya ulaşılamazsa takım hata mesajı alır ve hiçbir şey kaydedilmez. O ana kadar yanıtlanan yazılışlar önbellekte kalır, tekrar gönderince kalan yazılışlar sorulur.
+  - TDK bazı istekleri hiç yanıtlamıyor: 3 sn yanıt gelmezse aynı istek yeniden gönderilir (en fazla 3 deneme, ilk gelen yanıt kullanılır). Başarısız ve yavaş (2 sn üstü) sorgular `[tdk]` satırı olarak Vercel loguna yazılır.
   - TDK anlamları, host'un tur sonucu ekranında gösterilir.
 - Takım bir turda birden fazla farklı kelime gönderebilir; her kabul edilen kelime puan getirir. Aynı kelime ikinci kez kabul edilmez.
 - Puan: harf sayısı. Jokersiz 9 harfli kelimeye +5 bonus.
