@@ -38,7 +38,7 @@ async function lookupVariant(variant: string, signal: AbortSignal): Promise<TdkL
 }
 
 // Returns null when TDK can't be reached, so callers can tell "not a word" apart from "lookup failed".
-// The spelling the player typed is asked first, the other I/İ, O/Ö, U/Ü, G/Ğ, C/Ç spellings follow in parallel batches.
+// The spelling the player typed is asked first, the other I/İ, O/Ö, U/Ü, G/Ğ, C/Ç spellings follow in parallel batches, all within 10s (TDK often takes over 5s to answer from Vercel).
 // Every spelling TDK answered is kept in `cache` (one record per variant set), so a retry after a timeout resumes where the last one stopped.
 export async function lookupTdk(word: string, cache?: TdkCache): Promise<TdkLookup | null> {
   const variants = wordVariants(word);
@@ -46,7 +46,7 @@ export async function lookupTdk(word: string, cache?: TdkCache): Promise<TdkLook
   const known: Record<string, TdkLookup> = await cache?.get(cacheKey).then((value) => value ? JSON.parse(value) : {}).catch(() => ({})) ?? {};
   const order = [word, ...variants.filter((variant) => variant !== word && !known[variant])];
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   let learned = false, failed = false;
   try {
     if (known[word]?.valid) return known[word];
