@@ -164,7 +164,7 @@ export function createEngine(store: Store, notifier: Notifier) {
   async function isTdkWord(word: string): Promise<TdkLookup | null> {
     const cached = await store.getCache(`tdk:${word}`);
     if (cached) return JSON.parse(cached) as TdkLookup;
-    const lookup = await lookupTdk(word);
+    const lookup = await lookupTdk(word, { get: (key) => store.getCache(key), set: (key, value) => store.setCache(key, value, 7 * 24 * 60 * 60) });
     if (lookup) await store.setCache(`tdk:${word}`, JSON.stringify(lookup), 7 * 24 * 60 * 60);
     return lookup;
   }

@@ -2,6 +2,9 @@ import { normalizeTurkish } from "./wordGame.js";
 
 type TdkEntry = { madde?: string; anlamlarListe?: Array<{ anlam?: string }> };
 export type TdkLookup = { valid: boolean; meanings: string[] };
+export type TdkCache = { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void> };
+
+const BATCH_SIZE = 5;
 
 export function wordVariants(word: string) {
   const alternatives: Record<string, string[]> = { I: ["I", "İ"], İ: ["I", "İ"], O: ["O", "Ö"], Ö: ["O", "Ö"], U: ["U", "Ü"], Ü: ["U", "Ü"], G: ["G", "Ğ"], Ğ: ["G", "Ğ"], C: ["C", "Ç"], Ç: ["C", "Ç"] };
@@ -16,23 +19,42 @@ function meaningsFor(entry: TdkEntry) {
   return (entry.anlamlarListe ?? []).map((meaning) => meaning.anlam?.replace(/<[^>]*>/g, "").trim() ?? "").filter(Boolean);
 }
 
-// Returns null when TDK can't be reached, so callers can tell "not a word" apart from "lookup failed".
-export async function lookupTdk(word: string): Promise<TdkLookup | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+async function lookupVariant(variant: string, signal: AbortSignal): Promise<TdkLookup | null> {
   try {
-    for (const variant of wordVariants(word)) {
-      const response = await fetch(tdkUrl(variant), { signal: controller.signal });
-      if (!response.ok) return null;
-      const results = await response.json() as TdkEntry[] | { error?: string };
-      if (!Array.isArray(results)) continue;
-      const entry = results.find((result) => normalizeTurkish(result.madde ?? "") === variant);
-      if (entry) return { valid: true, meanings: meaningsFor(entry) };
-    }
-    return { valid: false, meanings: [] };
+    const response = await fetch(tdkUrl(variant), { signal });
+    if (!response.ok) return null;
+    const results = await response.json() as TdkEntry[] | { error?: string };
+    const entry = Array.isArray(results) ? results.find((result) => normalizeTurkish(result.madde ?? "") === variant) : undefined;
+    return entry ? { valid: true, meanings: meaningsFor(entry) } : { valid: false, meanings: [] };
   } catch {
     return null;
+  }
+}
+
+// Returns null when TDK can't be reached, so callers can tell "not a word" apart from "lookup failed".
+// The spelling the player typed is asked first, the other I/İ, O/Ö, U/Ü, G/Ğ, C/Ç spellings follow in parallel batches.
+// Every spelling TDK answered is kept in `cache` (one record per variant set), so a retry after a timeout resumes where the last one stopped.
+export async function lookupTdk(word: string, cache?: TdkCache): Promise<TdkLookup | null> {
+  const variants = wordVariants(word);
+  const cacheKey = `tdk-variants:${variants[0]}`;
+  const known: Record<string, TdkLookup> = await cache?.get(cacheKey).then((value) => value ? JSON.parse(value) : {}).catch(() => ({})) ?? {};
+  const order = [word, ...variants.filter((variant) => variant !== word && !known[variant])];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  let learned = false, failed = false;
+  try {
+    if (known[word]?.valid) return known[word];
+    const found = variants.find((variant) => known[variant]?.valid);
+    if (found) return known[found];
+    for (const batch of [known[word] ? [] : [word], ...Array.from({ length: Math.ceil((order.length - 1) / BATCH_SIZE) }, (_, index) => order.slice(1 + index * BATCH_SIZE, 1 + (index + 1) * BATCH_SIZE))]) {
+      const results = await Promise.all(batch.map((variant) => lookupVariant(variant, controller.signal)));
+      batch.forEach((variant, index) => { const result = results[index]; if (result) { known[variant] = result; learned = true; } else failed = true; });
+      const hit = batch.find((variant) => known[variant]?.valid);
+      if (hit) return known[hit];
+    }
+    return failed ? null : { valid: false, meanings: [] };
   } finally {
     clearTimeout(timeout);
+    if (learned) await cache?.set(cacheKey, JSON.stringify(known)).catch(() => undefined);
   }
 }

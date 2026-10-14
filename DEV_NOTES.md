@@ -56,7 +56,8 @@
 - Joker yalnızca oyuncunun ★ ile işaretlediği harfin yerine geçer. Telefon, turda olmayan harflerin yazılmasına izin vermez.
 - **Sözlük:** kelimeler canlı TDK sözlüğünden (`sozluk.gov.tr`) doğrulanır ve sonuçlar 7 gün önbellekte tutulur.
   - Elle onay yoktur: TDK'da bulunmayan kelime reddedilir.
-  - TDK'ya ulaşılamazsa takım hata mesajı alır ve hiçbir şey kaydedilmez.
+  - Önce oyuncunun yazdığı hâli sorulur, diğer I/İ, O/Ö, U/Ü, G/Ğ, C/Ç yazılışları 5'erli paralel gruplar hâlinde denenir (toplam 5 sn süre).
+  - TDK'ya ulaşılamazsa takım hata mesajı alır ve hiçbir şey kaydedilmez. O ana kadar yanıtlanan yazılışlar önbellekte kalır, tekrar gönderince kalan yazılışlar sorulur.
   - TDK anlamları, host'un tur sonucu ekranında gösterilir.
 - Takım bir turda birden fazla farklı kelime gönderebilir; her kabul edilen kelime puan getirir. Aynı kelime ikinci kez kabul edilmez.
 - Puan: harf sayısı. Jokersiz 9 harfli kelimeye +5 bonus.
