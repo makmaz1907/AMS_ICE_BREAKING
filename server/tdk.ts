@@ -19,15 +19,21 @@ function meaningsFor(entry: TdkEntry) {
   return (entry.anlamlarListe ?? []).map((meaning) => meaning.anlam?.replace(/<[^>]*>/g, "").trim() ?? "").filter(Boolean);
 }
 
+// Every failed request writes one "[tdk]" line to the function log, so the cause (timeout, HTTP status, network error, non-JSON body) shows up in `vercel logs`.
 async function lookupVariant(variant: string, signal: AbortSignal): Promise<TdkLookup | null> {
+  const started = Date.now();
+  const fail = (reason: string) => { console.warn(`[tdk] ${variant}: ${reason} (${Date.now() - started} ms)`); return null; };
   try {
     const response = await fetch(tdkUrl(variant), { signal });
-    if (!response.ok) return null;
-    const results = await response.json() as TdkEntry[] | { error?: string };
+    const body = await response.text();
+    if (!response.ok) return fail(`HTTP ${response.status} ${body.slice(0, 80).replace(/\s+/g, " ")}`);
+    let results: TdkEntry[] | { error?: string };
+    try { results = JSON.parse(body); } catch { return fail(`JSON değil: ${body.slice(0, 80).replace(/\s+/g, " ")}`); }
     const entry = Array.isArray(results) ? results.find((result) => normalizeTurkish(result.madde ?? "") === variant) : undefined;
     return entry ? { valid: true, meanings: meaningsFor(entry) } : { valid: false, meanings: [] };
-  } catch {
-    return null;
+  } catch (error) {
+    const cause = error instanceof Error && error.cause instanceof Error ? ` (${(error.cause as Error & { code?: string }).code ?? error.cause.message})` : "";
+    return fail(signal.aborted ? "zaman aşımı" : `ağ hatası: ${error instanceof Error ? error.message : String(error)}${cause}`);
   }
 }
 
@@ -47,6 +53,7 @@ export async function lookupTdk(word: string, cache?: TdkCache): Promise<TdkLook
     const found = variants.find((variant) => known[variant]?.valid);
     if (found) return known[found];
     for (const batch of [known[word] ? [] : [word], ...Array.from({ length: Math.ceil((order.length - 1) / BATCH_SIZE) }, (_, index) => order.slice(1 + index * BATCH_SIZE, 1 + (index + 1) * BATCH_SIZE))]) {
+      if (controller.signal.aborted) { failed = true; break; }
       const results = await Promise.all(batch.map((variant) => lookupVariant(variant, controller.signal)));
       batch.forEach((variant, index) => { const result = results[index]; if (result) { known[variant] = result; learned = true; } else failed = true; });
       const hit = batch.find((variant) => known[variant]?.valid);
